@@ -1,0 +1,22 @@
+import type { Metadata } from 'next'
+import { Inter } from 'next/font/google'
+import './globals.css'
+import { Providers } from '@/components/shared/Providers'
+
+const inter = Inter({ subsets: ['latin'] })
+
+export const metadata: Metadata = {
+  title: 'OpTutor – Future-Ready Learning',
+  description: 'Learn technology, AI, math, science and more with live classes and recorded courses.',
+  keywords: ['online tutoring', 'AI learning', 'live classes', 'technology education'],
+}
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en" suppressHydrationWarning>
+      <body className={inter.className}>
+        <Providers>{children}</Providers>
+      </body>
+    </html>
+  )
+}
