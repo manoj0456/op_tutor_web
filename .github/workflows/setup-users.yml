@@ -1,4 +1,4 @@
-﻿name: Setup Users (run once)
+name: Setup Users (run once)
 
 on:
   workflow_dispatch:

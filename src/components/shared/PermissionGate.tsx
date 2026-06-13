@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 import { usePermissions } from '@/context/PermissionContext'
 
 interface Props {

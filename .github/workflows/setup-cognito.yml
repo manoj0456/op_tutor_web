@@ -1,4 +1,4 @@
-﻿name: Setup Cognito (run once)
+name: Setup Cognito (run once)
 
 on:
   workflow_dispatch:
