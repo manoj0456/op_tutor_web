@@ -5,7 +5,7 @@ on:
 
 env:
   AWS_REGION:  us-east-2
-  ADMIN_EMAIL: kasam.manoj456@gmail.com
+  ADMIN_EMAIL: manoj@oppertunitypool.com
 
 jobs:
   setup-users:
@@ -19,41 +19,25 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            us-east-2
 
-      - name: Create manoj Cognito user
-        run: |
-          POOL_ID="${{ secrets.NEXT_PUBLIC_COGNITO_USER_POOL_ID }}"
-
-          aws cognito-idp admin-create-user \
-            --user-pool-id "$POOL_ID" \
-            --username "$ADMIN_EMAIL" \
-            --user-attributes \
-              Name=email,Value="$ADMIN_EMAIL" \
-              Name=email_verified,Value=true \
-              Name=name,Value="Manoj" \
-            --message-action SUPPRESS \
-            --region "$AWS_REGION" 2>&1 | grep -v UserExistsException || true
-
-          aws cognito-idp admin-set-user-password \
-            --user-pool-id "$POOL_ID" \
-            --username "$ADMIN_EMAIL" \
-            --password "Manoj@1234" \
-            --permanent \
-            --region "$AWS_REGION"
-
-          echo "User $ADMIN_EMAIL ready"
-
       - name: Assign SUPER_ADMIN role in DynamoDB
         run: |
           NOW=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
+
           aws dynamodb put-item \
             --table-name OpTutor-UserRoles \
             --region "$AWS_REGION" \
             --item "{\"userEmail\":{\"S\":\"$ADMIN_EMAIL\"},\"roleId\":{\"S\":\"SUPER_ADMIN\"},\"roleName\":{\"S\":\"Super Admin\"},\"name\":{\"S\":\"Manoj\"},\"assignedBy\":{\"S\":\"system\"},\"assignedAt\":{\"S\":\"$NOW\"}}"
+
           echo "Assigned SUPER_ADMIN to $ADMIN_EMAIL"
 
-      - name: Summary
+      - name: Job summary
         run: |
-          echo "## Users Setup Complete" >> "$GITHUB_STEP_SUMMARY"
-          echo "| User | Email | Role | Password |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|---|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Manoj | ${{ env.ADMIN_EMAIL }} | SUPER_ADMIN | Manoj@1234 |" >> "$GITHUB_STEP_SUMMARY"
+          cat >> "$GITHUB_STEP_SUMMARY" << SUMMARY
+          ## Users Setup Complete
+
+          | User  | Email                          | Role        |
+          |-------|--------------------------------|-------------|
+          | Manoj | ${{ env.ADMIN_EMAIL }}         | SUPER_ADMIN |
+
+          **Note:** Log in at [tutor.oppertunitypool.com/login](https://tutor.oppertunitypool.com/login) using your oppertunitypool.com credentials.
+          SUMMARY

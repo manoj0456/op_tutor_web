@@ -1,6 +1,6 @@
 import { RegisterForm } from '@/components/shared/RegisterForm'
 
-export const metadata = { title: 'Sign Up – OpTutor' }
+export const metadata = { title: 'Request Access – OpTutor' }
 
 export default function SignupPage() {
   return (
