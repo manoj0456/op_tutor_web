@@ -1,4 +1,4 @@
-name: Deploy to S3
+﻿name: Deploy to S3
 
 on:
   push:
@@ -24,6 +24,12 @@ jobs:
 
       - name: Build static export
         run: npm run build
+        env:
+          NEXT_PUBLIC_COGNITO_USER_POOL_ID: ${{ secrets.NEXT_PUBLIC_COGNITO_USER_POOL_ID }}
+          NEXT_PUBLIC_COGNITO_CLIENT_ID:    ${{ secrets.NEXT_PUBLIC_COGNITO_CLIENT_ID }}
+          NEXT_PUBLIC_API_URL:              ${{ secrets.NEXT_PUBLIC_API_URL }}
+          NEXT_PUBLIC_APP_URL:              https://tutor.oppertunitypool.com
+          NEXT_PUBLIC_APP_NAME:             OpTutor
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -57,4 +63,4 @@ jobs:
             --paths "/*"
 
       - name: Confirm deployment
-        run: echo "Deployed to s3://tutor-oppertunitypool-com → tutor.oppertunitypool.com"
+        run: echo "Deployed to s3://tutor-oppertunitypool-com"

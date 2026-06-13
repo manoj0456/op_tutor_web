@@ -1,0 +1,133 @@
+﻿'use client'
+import { createContext, useContext, useState, useEffect } from 'react'
+import {
+  CognitoUserPool,
+  CognitoUser,
+  AuthenticationDetails,
+  CognitoUserAttribute,
+} from 'amazon-cognito-identity-js'
+import { cognitoConfig } from '@/lib/cognito-config'
+
+const configReady = !!(cognitoConfig.UserPoolId && cognitoConfig.ClientId)
+const userPool = configReady ? new CognitoUserPool(cognitoConfig) : null
+
+interface AuthContextValue {
+  user: CognitoUser | null | undefined
+  userEmail: string
+  signIn: (email: string, password: string) => Promise<unknown>
+  signUp: (email: string, password: string, name: string) => Promise<unknown>
+  signOut: () => void
+  forgotPassword: (email: string) => Promise<void>
+  confirmForgotPassword: (email: string, code: string, newPassword: string) => Promise<void>
+  getIdToken: () => Promise<string>
+}
+
+const AuthContext = createContext<AuthContextValue | null>(null)
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser]           = useState<CognitoUser | null | undefined>(undefined)
+  const [userEmail, setUserEmail] = useState('')
+
+  useEffect(() => {
+    if (!userPool) { setUser(null); return }
+    const cognitoUser = userPool.getCurrentUser()
+    if (!cognitoUser) { setUser(null); return }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    cognitoUser.getSession((err: Error | null, session: any) => {
+      if (!err && session?.isValid()) {
+        setUser(cognitoUser)
+        setUserEmail(session.getIdToken().decodePayload().email ?? '')
+      } else {
+        setUser(null)
+      }
+    })
+  }, [])
+
+  function signIn(email: string, password: string) {
+    if (!userPool) return Promise.reject(new Error('Cognito not configured. Run setup-cognito workflow first.'))
+    return new Promise((resolve, reject) => {
+      const cognitoUser = new CognitoUser({ Username: email, Pool: userPool! })
+      const authDetails = new AuthenticationDetails({ Username: email, Password: password })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      cognitoUser.authenticateUser(authDetails, {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        onSuccess: (session: any) => {
+          setUser(cognitoUser)
+          setUserEmail(session.getIdToken().decodePayload().email ?? email)
+          resolve(session)
+        },
+        onFailure: reject,
+        newPasswordRequired: () =>
+          reject(new Error('Password change required. Contact your administrator.')),
+      })
+    })
+  }
+
+  function signUp(email: string, password: string, name: string) {
+    if (!userPool) return Promise.reject(new Error('Cognito not configured.'))
+    return new Promise((resolve, reject) => {
+      const attrs = [
+        new CognitoUserAttribute({ Name: 'email', Value: email }),
+        new CognitoUserAttribute({ Name: 'name',  Value: name  }),
+      ]
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      userPool!.signUp(email, password, attrs, [], (err: any, result: any) => {
+        if (err) { reject(err); return }
+        resolve(result)
+      })
+    })
+  }
+
+  function signOut() {
+    userPool?.getCurrentUser()?.signOut()
+    setUser(null)
+    setUserEmail('')
+  }
+
+  function forgotPassword(email: string): Promise<void> {
+    if (!userPool) return Promise.reject(new Error('Cognito not configured.'))
+    return new Promise((resolve, reject) => {
+      const cognitoUser = new CognitoUser({ Username: email, Pool: userPool! })
+      cognitoUser.forgotPassword({
+        onSuccess: () => resolve(),
+        onFailure: reject,
+      })
+    })
+  }
+
+  function confirmForgotPassword(email: string, code: string, newPassword: string): Promise<void> {
+    if (!userPool) return Promise.reject(new Error('Cognito not configured.'))
+    return new Promise((resolve, reject) => {
+      const cognitoUser = new CognitoUser({ Username: email, Pool: userPool! })
+      cognitoUser.confirmPassword(code, newPassword, {
+        onSuccess: () => resolve(),
+        onFailure: reject,
+      })
+    })
+  }
+
+  function getIdToken(): Promise<string> {
+    return new Promise((resolve, reject) => {
+      if (!userPool) return reject(new Error('Cognito not configured'))
+      const cu = userPool.getCurrentUser()
+      if (!cu) return reject(new Error('Not authenticated'))
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      cu.getSession((err: Error | null, session: any) => {
+        if (err || !session?.isValid()) return reject(err || new Error('Session invalid'))
+        resolve(session.getIdToken().getJwtToken())
+      })
+    })
+  }
+
+  return (
+    <AuthContext.Provider value={{ user, userEmail, signIn, signUp, signOut, forgotPassword, confirmForgotPassword, getIdToken }}>
+      {children}
+    </AuthContext.Provider>
+  )
+}
+
+export function useAuth() {
+  const ctx = useContext(AuthContext)
+  if (!ctx) throw new Error('useAuth must be used inside AuthProvider')
+  return ctx
+}
