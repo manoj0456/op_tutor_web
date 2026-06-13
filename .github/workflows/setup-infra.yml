@@ -6,6 +6,8 @@ on:
 jobs:
   setup:
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GH_PAT }}
 
     steps:
       - name: Configure AWS credentials
@@ -17,25 +19,21 @@ jobs:
 
       - name: Create S3 bucket
         run: |
-          # Create bucket in us-east-2
           aws s3api create-bucket \
             --bucket tutor-oppertunitypool-com \
             --region us-east-2 \
             --create-bucket-configuration LocationConstraint=us-east-2 \
-            || echo "Bucket already exists, continuing..."
+            2>&1 | grep -v "BucketAlreadyOwnedByYou" || true
 
-          # Disable public access block so CloudFront OAC can read it
           aws s3api put-public-access-block \
             --bucket tutor-oppertunitypool-com \
             --public-access-block-configuration \
               BlockPublicAcls=false,IgnorePublicAcls=false,BlockPublicPolicy=false,RestrictPublicBuckets=false
 
-          # Enable static website hosting
           aws s3 website s3://tutor-oppertunitypool-com/ \
             --index-document index.html \
             --error-document 404/index.html
 
-          # Set bucket policy for public read (CloudFront uses this)
           aws s3api put-bucket-policy \
             --bucket tutor-oppertunitypool-com \
             --policy '{
@@ -49,104 +47,271 @@ jobs:
               }]
             }'
 
-          echo "S3 bucket tutor-oppertunitypool-com configured."
+          echo "S3 bucket tutor-oppertunitypool-com ready."
 
-      - name: Check ACM certificate
-        env:
-          ACM_CERTIFICATE_ARN: ${{ secrets.ACM_CERTIFICATE_ARN }}
+      - name: Find or request ACM certificate for tutor.oppertunitypool.com
+        id: cert
         run: |
-          # ACM cert must be in us-east-1 for CloudFront
-          STATUS=$(aws acm describe-certificate \
-            --certificate-arn "$ACM_CERTIFICATE_ARN" \
+          echo "Searching for existing cert that covers tutor.oppertunitypool.com ..."
+
+          # List all certs in us-east-1 and find one that covers tutor.oppertunitypool.com or *.oppertunitypool.com
+          CERT_ARN=$(aws acm list-certificates \
             --region us-east-1 \
-            --query 'Certificate.Status' \
-            --output text 2>/dev/null || echo "NOT_FOUND")
-          echo "ACM certificate status: $STATUS"
-          if [ "$STATUS" != "ISSUED" ]; then
-            echo "ERROR: ACM certificate is not ISSUED. Ensure ACM_CERTIFICATE_ARN points to a valid, issued wildcard cert in us-east-1."
-            exit 1
+            --certificate-statuses ISSUED \
+            --output json | jq -r '
+              .CertificateSummaryList[]
+              | select(
+                  .DomainName == "tutor.oppertunitypool.com" or
+                  .DomainName == "*.oppertunitypool.com" or
+                  (.SubjectAlternativeNameSummaries // [] | any(. == "tutor.oppertunitypool.com" or . == "*.oppertunitypool.com"))
+                )
+              | .CertificateArn
+            ' | head -1)
+
+          if [ -n "$CERT_ARN" ]; then
+            echo "Found existing cert: $CERT_ARN"
+            echo "cert_arn=$CERT_ARN" >> "$GITHUB_OUTPUT"
+            echo "cert_new=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
-      - name: Create CloudFront distribution
-        env:
-          ACM_CERTIFICATE_ARN: ${{ secrets.ACM_CERTIFICATE_ARN }}
-        run: |
-          S3_WEBSITE_ENDPOINT="tutor-oppertunitypool-com.s3-website.us-east-2.amazonaws.com"
+          echo "No matching cert found. Requesting new cert for tutor.oppertunitypool.com ..."
+          NEW_CERT_ARN=$(aws acm request-certificate \
+            --domain-name "tutor.oppertunitypool.com" \
+            --validation-method DNS \
+            --region us-east-1 \
+            --query 'CertificateArn' \
+            --output text)
+          echo "Requested cert: $NEW_CERT_ARN"
+          echo "cert_arn=$NEW_CERT_ARN" >> "$GITHUB_OUTPUT"
+          echo "cert_new=true" >> "$GITHUB_OUTPUT"
 
-          DIST_CONFIG=$(cat <<EOF
-          {
-            "Comment": "tutor.oppertunitypool.com CDN",
-            "Origins": {
-              "Quantity": 1,
-              "Items": [{
-                "Id": "S3-tutor-oppertunitypool-com",
-                "DomainName": "${S3_WEBSITE_ENDPOINT}",
-                "CustomOriginConfig": {
-                  "HTTPPort": 80,
-                  "HTTPSPort": 443,
-                  "OriginProtocolPolicy": "http-only"
+      - name: Auto-validate cert via Route53 (if zone exists)
+        id: validate
+        run: |
+          CERT_ARN="${{ steps.cert.outputs.cert_arn }}"
+          CERT_NEW="${{ steps.cert.outputs.cert_new }}"
+
+          if [ "$CERT_NEW" = "false" ]; then
+            echo "Using existing issued cert — no validation needed."
+            echo "validated=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Wait a few seconds for ACM to generate the validation record
+          sleep 10
+
+          # Get DNS validation record
+          VALIDATION=$(aws acm describe-certificate \
+            --certificate-arn "$CERT_ARN" \
+            --region us-east-1 \
+            --query 'Certificate.DomainValidationOptions[0].ResourceRecord' \
+            --output json)
+
+          CNAME_NAME=$(echo "$VALIDATION" | jq -r '.Name')
+          CNAME_VALUE=$(echo "$VALIDATION" | jq -r '.Value')
+
+          echo "Validation CNAME needed:"
+          echo "  Name : $CNAME_NAME"
+          echo "  Value: $CNAME_VALUE"
+
+          # Try to find the Route53 hosted zone for oppertunitypool.com
+          ZONE_ID=$(aws route53 list-hosted-zones --output json | \
+            jq -r '.HostedZones[] | select(.Name == "oppertunitypool.com." or .Name == "oppertunitypool.com") | .Id' | \
+            sed 's|/hostedzone/||' | head -1)
+
+          if [ -z "$ZONE_ID" ]; then
+            echo "No Route53 zone found for oppertunitypool.com."
+            echo "Manual DNS step required:"
+            echo "  Add CNAME: $CNAME_NAME -> $CNAME_VALUE"
+            echo "validated=false" >> "$GITHUB_OUTPUT"
+            echo "cname_name=$CNAME_NAME" >> "$GITHUB_OUTPUT"
+            echo "cname_value=$CNAME_VALUE" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Found Route53 zone: $ZONE_ID — adding validation CNAME ..."
+          aws route53 change-resource-record-sets \
+            --hosted-zone-id "$ZONE_ID" \
+            --change-batch "{
+              \"Changes\": [{
+                \"Action\": \"UPSERT\",
+                \"ResourceRecordSet\": {
+                  \"Name\": \"$CNAME_NAME\",
+                  \"Type\": \"CNAME\",
+                  \"TTL\": 300,
+                  \"ResourceRecords\": [{\"Value\": \"$CNAME_VALUE\"}]
                 }
               }]
-            },
-            "DefaultCacheBehavior": {
-              "TargetOriginId": "S3-tutor-oppertunitypool-com",
-              "ViewerProtocolPolicy": "redirect-to-https",
-              "CachePolicyId": "658327ea-f89d-4fab-a63d-7e88639e58f6",
-              "Compress": true,
-              "AllowedMethods": {
-                "Quantity": 2,
-                "Items": ["GET", "HEAD"]
-              }
-            },
-            "CustomErrorResponses": {
-              "Quantity": 2,
-              "Items": [
-                {
-                  "ErrorCode": 404,
-                  "ResponsePagePath": "/404.html",
-                  "ResponseCode": "404",
-                  "ErrorCachingMinTTL": 10
-                },
-                {
-                  "ErrorCode": 403,
-                  "ResponsePagePath": "/404.html",
-                  "ResponseCode": "404",
-                  "ErrorCachingMinTTL": 10
+            }"
+
+          echo "Validation CNAME added. Waiting up to 8 minutes for cert issuance ..."
+          for i in $(seq 1 16); do
+            sleep 30
+            STATUS=$(aws acm describe-certificate \
+              --certificate-arn "$CERT_ARN" \
+              --region us-east-1 \
+              --query 'Certificate.Status' \
+              --output text)
+            echo "  [${i}/16] Status: $STATUS"
+            if [ "$STATUS" = "ISSUED" ]; then
+              echo "Cert issued!"
+              echo "validated=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+
+          echo "Cert not yet issued after 8 minutes — DNS propagation may still be pending."
+          echo "validated=false" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for cert if not yet validated
+        if: steps.validate.outputs.validated == 'false'
+        run: |
+          CERT_ARN="${{ steps.cert.outputs.cert_arn }}"
+          echo "=========================================="
+          echo "ACTION REQUIRED — Cert not yet validated"
+          echo "=========================================="
+          echo "Add this DNS CNAME to oppertunitypool.com:"
+          echo "  Name : ${{ steps.validate.outputs.cname_name }}"
+          echo "  Value: ${{ steps.validate.outputs.cname_value }}"
+          echo ""
+          echo "Then re-run this workflow once the cert shows ISSUED in:"
+          echo "  AWS Console -> Certificate Manager -> us-east-1 -> $CERT_ARN"
+          echo ""
+          echo "Also update ACM_CERTIFICATE_ARN secret on op_tutor_web to: $CERT_ARN"
+          echo "=========================================="
+          exit 1
+
+      - name: Create CloudFront distribution
+        id: cloudfront
+        run: |
+          CERT_ARN="${{ steps.cert.outputs.cert_arn }}"
+          S3_WEBSITE_ENDPOINT="tutor-oppertunitypool-com.s3-website.us-east-2.amazonaws.com"
+          CALLER_REF="tutor-oppertunitypool-$(date +%s)"
+
+          DIST_CONFIG=$(jq -n \
+            --arg s3 "$S3_WEBSITE_ENDPOINT" \
+            --arg cert "$CERT_ARN" \
+            --arg ref "$CALLER_REF" \
+            '{
+              Comment: "tutor.oppertunitypool.com CDN",
+              CallerReference: $ref,
+              Origins: {
+                Quantity: 1,
+                Items: [{
+                  Id: "S3-tutor-oppertunitypool-com",
+                  DomainName: $s3,
+                  CustomOriginConfig: {
+                    HTTPPort: 80,
+                    HTTPSPort: 443,
+                    OriginProtocolPolicy: "http-only"
+                  }
+                }]
+              },
+              DefaultCacheBehavior: {
+                TargetOriginId: "S3-tutor-oppertunitypool-com",
+                ViewerProtocolPolicy: "redirect-to-https",
+                CachePolicyId: "658327ea-f89d-4fab-a63d-7e88639e58f6",
+                Compress: true,
+                AllowedMethods: {
+                  Quantity: 2,
+                  Items: ["GET", "HEAD"]
                 }
-              ]
-            },
-            "Aliases": {
-              "Quantity": 1,
-              "Items": ["tutor.oppertunitypool.com"]
-            },
-            "ViewerCertificate": {
-              "ACMCertificateArn": "${ACM_CERTIFICATE_ARN}",
-              "SSLSupportMethod": "sni-only",
-              "MinimumProtocolVersion": "TLSv1.2_2021"
-            },
-            "Enabled": true,
-            "HttpVersion": "http2and3",
-            "PriceClass": "PriceClass_100",
-            "CallerReference": "tutor-oppertunitypool-$(date +%s)"
-          }
-          EOF
-          )
+              },
+              CustomErrorResponses: {
+                Quantity: 2,
+                Items: [
+                  {ErrorCode: 404, ResponsePagePath: "/404.html", ResponseCode: "404", ErrorCachingMinTTL: 10},
+                  {ErrorCode: 403, ResponsePagePath: "/404.html", ResponseCode: "404", ErrorCachingMinTTL: 10}
+                ]
+              },
+              Aliases: {
+                Quantity: 1,
+                Items: ["tutor.oppertunitypool.com"]
+              },
+              ViewerCertificate: {
+                ACMCertificateArn: $cert,
+                SSLSupportMethod: "sni-only",
+                MinimumProtocolVersion: "TLSv1.2_2021"
+              },
+              Enabled: true,
+              HttpVersion: "http2and3",
+              PriceClass: "PriceClass_100"
+            }')
 
           RESULT=$(aws cloudfront create-distribution \
             --distribution-config "$DIST_CONFIG" \
             --output json)
 
-          DIST_ID=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin)['Distribution']['Id'])")
-          DIST_DOMAIN=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin)['Distribution']['DomainName'])")
+          DIST_ID=$(echo "$RESULT" | jq -r '.Distribution.Id')
+          DIST_DOMAIN=$(echo "$RESULT" | jq -r '.Distribution.DomainName')
+
+          echo "dist_id=$DIST_ID" >> "$GITHUB_OUTPUT"
+          echo "dist_domain=$DIST_DOMAIN" >> "$GITHUB_OUTPUT"
+
+          echo "CloudFront Distribution created!"
+          echo "  ID    : $DIST_ID"
+          echo "  Domain: $DIST_DOMAIN"
+
+      - name: Auto-set TUTOR_CLOUDFRONT_DISTRIBUTION_ID secret on this repo
+        run: |
+          DIST_ID="${{ steps.cloudfront.outputs.dist_id }}"
+          printf '%s' "$DIST_ID" | gh secret set TUTOR_CLOUDFRONT_DISTRIBUTION_ID \
+            --repo manoj0456/op_tutor_web
+          echo "Secret TUTOR_CLOUDFRONT_DISTRIBUTION_ID set to: $DIST_ID"
+
+      - name: Add CloudFront CNAME to Route53 (if zone exists)
+        id: dns
+        run: |
+          DIST_DOMAIN="${{ steps.cloudfront.outputs.dist_domain }}"
+          ZONE_ID=$(aws route53 list-hosted-zones --output json | \
+            jq -r '.HostedZones[] | select(.Name == "oppertunitypool.com." or .Name == "oppertunitypool.com") | .Id' | \
+            sed 's|/hostedzone/||' | head -1)
+
+          if [ -z "$ZONE_ID" ]; then
+            echo "No Route53 zone found — manual DNS step required."
+            echo "r53=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Adding CNAME tutor.oppertunitypool.com -> $DIST_DOMAIN in zone $ZONE_ID ..."
+          aws route53 change-resource-record-sets \
+            --hosted-zone-id "$ZONE_ID" \
+            --change-batch "{
+              \"Changes\": [{
+                \"Action\": \"UPSERT\",
+                \"ResourceRecordSet\": {
+                  \"Name\": \"tutor.oppertunitypool.com\",
+                  \"Type\": \"CNAME\",
+                  \"TTL\": 300,
+                  \"ResourceRecords\": [{\"Value\": \"$DIST_DOMAIN\"}]
+                }
+              }]
+            }"
+
+          echo "DNS CNAME added via Route53!"
+          echo "r53=true" >> "$GITHUB_OUTPUT"
+
+      - name: Summary
+        run: |
+          DIST_ID="${{ steps.cloudfront.outputs.dist_id }}"
+          DIST_DOMAIN="${{ steps.cloudfront.outputs.dist_domain }}"
+          R53="${{ steps.dns.outputs.r53 }}"
 
           echo "=========================================="
-          echo "CloudFront Distribution created!"
-          echo "Distribution ID : $DIST_ID"
-          echo "CloudFront Domain: $DIST_DOMAIN"
+          echo "  SETUP COMPLETE"
+          echo "=========================================="
+          echo "  S3 bucket : tutor-oppertunitypool-com (us-east-2)"
+          echo "  CloudFront: $DIST_ID"
+          echo "  CF domain : $DIST_DOMAIN"
+          echo "  Secret    : TUTOR_CLOUDFRONT_DISTRIBUTION_ID set"
           echo ""
-          echo "NEXT STEPS:"
-          echo "1. Add GitHub secret TUTOR_CLOUDFRONT_DISTRIBUTION_ID = $DIST_ID"
-          echo "2. Add DNS CNAME: tutor.oppertunitypool.com -> $DIST_DOMAIN"
-          echo "   (or in Route 53: alias record tutor -> $DIST_DOMAIN)"
-          echo "3. Push to main to trigger first deploy"
+          if [ "$R53" = "true" ]; then
+            echo "  DNS       : CNAME added via Route53 (propagation ~5 min)"
+          else
+            echo "  DNS       : Add manually:"
+            echo "    CNAME tutor.oppertunitypool.com -> $DIST_DOMAIN"
+          fi
+          echo ""
+          echo "  Push to main to trigger first deploy!"
           echo "=========================================="
