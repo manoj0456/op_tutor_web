@@ -8,9 +8,9 @@ on:
       - 'lambda/**'
 
 env:
-  AWS_REGION:       us-east-2
-  LAMBDA_NAME:      optutor-api
-  API_NAME:         OpTutorAPI
+  AWS_REGION: us-east-2
+  LAMBDA_NAME: optutor-api
+  API_NAME: OpTutorAPI
   LAMBDA_ROLE_NAME: optutor-lambda-role
 
 jobs:
@@ -26,19 +26,21 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            us-east-2
+          aws-region: us-east-2
 
       - name: Create DynamoDB tables (idempotent)
         run: |
-          for TABLE in OpTutor-Roles OpTutor-UserRoles OpTutor-RoleRequests; do
+          for TABLE in OpTutor-Roles OpTutor-UserRoles OpTutor-RoleRequests OpTutor-Courses OpTutor-LiveSessions; do
             if aws dynamodb describe-table --table-name "$TABLE" --region "$AWS_REGION" 2>/dev/null; then
               echo "Table $TABLE already exists"
             else
               PK="roleId"
               if [ "$TABLE" = "OpTutor-UserRoles" ]; then PK="userEmail"; fi
               if [ "$TABLE" = "OpTutor-RoleRequests" ]; then PK="requestId"; fi
+              if [ "$TABLE" = "OpTutor-Courses" ]; then PK="courseId"; fi
+              if [ "$TABLE" = "OpTutor-LiveSessions" ]; then PK="sessionId"; fi
               aws dynamodb create-table \
                 --table-name "$TABLE" \
                 --attribute-definitions AttributeName=${PK},AttributeType=S \
@@ -167,4 +169,4 @@ jobs:
           echo "| Resource | Value |" >> "$GITHUB_STEP_SUMMARY"
           echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
           echo "| API URL | $API_URL |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Lambda  | $LAMBDA_NAME |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Lambda | $LAMBDA_NAME |" >> "$GITHUB_STEP_SUMMARY"
