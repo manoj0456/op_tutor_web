@@ -69,7 +69,24 @@ function extractEmail(event) {
   } catch { return null; }
 }
 
-as function getCallerContext(event) {
+// ── YouTube URL parser ─────────────────────────────────────────
+function parseYouTubeUrl(url) {
+  if (!url) return null;
+  const patterns = [
+    /youtube\.com\/watch\?v=([^&\n?#]+)/,
+    /youtu\.be\/([^&\n?#]+)/,
+    /youtube\.com\/embed\/([^&\n?#]+)/,
+    /youtube\.com\/live\/([^&\n?#]+)/,
+  ];
+  for (const p of patterns) {
+    const m = url.match(p);
+    if (m) return { providerVideoId: m[1], embedUrl: `https://www.youtube.com/embed/${m[1]}` };
+  }
+  return null;
+}
+
+// ── Get caller email + permissions ─────────────────────────────
+async function getCallerContext(event) {
   const email = extractEmail(event);
   if (!email) return { email: null, roleRecord: null, permissions: new Set() };
   try {
@@ -87,6 +104,24 @@ as function getCallerContext(event) {
   }
 }
 
+// ── Normalize video object (handles old + new shapes) ─────────
+function normalizeVideo(v, index) {
+  const ytUrl = v.youtubeUrl || '';
+  const parsed = parseYouTubeUrl(ytUrl);
+  return {
+    videoId: v.videoId || randomUUID(),
+    title: v.title || `Video ${index + 1}`,
+    description: v.description || '',
+    providerType: v.providerType || 'YOUTUBE',
+    providerVideoId: v.providerVideoId || parsed?.providerVideoId || '',
+    embedUrl: v.embedUrl || parsed?.embedUrl || '',
+    youtubeUrl: ytUrl,
+    order: v.order ?? index,
+    // legacy compat
+    source: v.source || 'youtube',
+  };
+}
+
 export async function handler(event) {
   const method = event.httpMethod;
   const path = event.path || '/';
@@ -101,7 +136,7 @@ export async function handler(event) {
   const body = parseBody(event);
 
   try {
-    // Roles
+    // ── Roles ──────────────────────────────────────────────────
     if (resource === 'roles') {
       if (method === 'GET' && !id) return ok((await scanAll(TABLES.roles)).map(normalizeRole));
       const ctx = await getCallerContext(event);
@@ -116,7 +151,7 @@ export async function handler(event) {
       }
     }
 
-    // Users
+    // ── Users ──────────────────────────────────────────────────
     if (resource === 'users') {
       const ctx = await getCallerContext(event);
       if (!ctx.email) return unauthorized();
@@ -160,7 +195,7 @@ export async function handler(event) {
       }
     }
 
-    // Role Requests
+    // ── Role Requests ──────────────────────────────────────────
     if (resource === 'role-requests') {
       if (method === 'POST') {
         const { email, name, requestedRole } = body;
@@ -179,13 +214,17 @@ export async function handler(event) {
       if (method === 'GET') return ok(await scanAll(TABLES.roleRequests));
     }
 
-    // Courses
+    // ── Courses ────────────────────────────────────────────────
     if (resource === 'courses') {
       if (method === 'GET' && !id) {
         const ctx = await getCallerContext(event);
         const all = await scanAll(TABLES.courses);
         const canManage = ctx.permissions.has('manage_courses');
-        const filtered = canManage ? all : all.filter(c => c.status === 'published');
+        // Support both PUBLISHED (new) and published (legacy)
+        const filtered = canManage ? all : all.filter(c => {
+          const s = (c.status || '').toUpperCase();
+          return s === 'PUBLISHED';
+        });
         return ok(filtered.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
       }
 
@@ -200,25 +239,28 @@ export async function handler(event) {
       if (!ctx.permissions.has('manage_courses')) return forbidden();
 
       if (method === 'POST') {
-        const { title, description, category, videos, status } = body;
+        const { title, thumbnailUrl, shortDescription, description, category, tags, difficultyLevel, instructorName, videos, status } = body;
         if (!title) return badRequest('title is required');
         if (!videos || !Array.isArray(videos) || videos.length === 0) return badRequest('At least one video is required');
         const now = new Date().toISOString();
+        const normalizedStatus = (status || 'DRAFT').toUpperCase();
         const item = {
           courseId: randomUUID(),
           title,
+          thumbnailUrl: thumbnailUrl || '',
+          shortDescription: shortDescription || '',
           description: description || '',
-          category: category || 'other',
-          videos: videos.map(v => ({
-            videoId: randomUUID(),
-            title: v.title || 'Untitled Video',
-            youtubeUrl: v.youtubeUrl || '',
-            source: v.source || 'youtube',
-          })),
-          status: status || 'published',
+          category: category || 'Other',
+          tags: Array.isArray(tags) ? tags : [],
+          difficultyLevel: difficultyLevel || 'BEGINNER',
+          instructorName: instructorName || ctx.email,
+          videos: videos.map((v, i) => normalizeVideo(v, i)),
+          status: normalizedStatus,
           createdBy: ctx.email,
           createdAt: now,
+          updatedBy: ctx.email,
           updatedAt: now,
+          ...(normalizedStatus === 'PUBLISHED' ? { publishedAt: now } : {}),
         };
         await ddb.send(new PutCommand({ TableName: TABLES.courses, Item: item }));
         return created(item);
@@ -227,13 +269,24 @@ export async function handler(event) {
       if (method === 'PUT' && id) {
         const existing = await ddb.send(new GetCommand({ TableName: TABLES.courses, Key: { courseId: id } }));
         if (!existing.Item) return notFound('Course not found');
-        const updated = { ...existing.Item, ...body, courseId: id, updatedAt: new Date().toISOString() };
+        const now = new Date().toISOString();
+        const incomingStatus = body.status ? (body.status).toUpperCase() : undefined;
+        const wasPublished = (existing.Item.status || '').toUpperCase() === 'PUBLISHED';
+        const willPublish = incomingStatus === 'PUBLISHED';
+        const updated = {
+          ...existing.Item,
+          ...body,
+          courseId: id,
+          updatedBy: ctx.email,
+          updatedAt: now,
+          ...(incomingStatus ? { status: incomingStatus } : {}),
+          ...(!wasPublished && willPublish ? { publishedAt: now } : {}),
+        };
         if (Array.isArray(updated.videos)) {
-          updated.videos = updated.videos.map(v => ({
-            ...v,
-            videoId: v.videoId || randomUUID(),
-            source: v.source || 'youtube',
-          }));
+          updated.videos = updated.videos.map((v, i) => normalizeVideo(v, i));
+        }
+        if (Array.isArray(updated.tags)) {
+          updated.tags = updated.tags;
         }
         await ddb.send(new PutCommand({ TableName: TABLES.courses, Item: updated }));
         return ok(updated);
@@ -245,13 +298,14 @@ export async function handler(event) {
       }
     }
 
-    // Live Sessions
+    // ── Live Sessions ──────────────────────────────────────────
     if (resource === 'live-sessions') {
       if (method === 'GET' && !id) {
         const all = await scanAll(TABLES.liveSessions);
-        const order = { live: 0, upcoming: 1, ended: 2 };
+        // Support both LIVE (new) and live (legacy)
+        const statusOrder = { LIVE: 0, live: 0, UPCOMING: 1, upcoming: 1, COMPLETED: 2, ended: 2, CANCELLED: 3, cancelled: 3 };
         return ok(all.sort((a, b) => {
-          const od = (order[a.status] ?? 1) - (order[b.status] ?? 1);
+          const od = (statusOrder[a.status] ?? 1) - (statusOrder[b.status] ?? 1);
           if (od !== 0) return od;
           return new Date(a.scheduledAt) - new Date(b.scheduledAt);
         }));
@@ -268,22 +322,33 @@ export async function handler(event) {
       if (!ctx.permissions.has('manage_courses')) return forbidden();
 
       if (method === 'POST') {
-        const { title, description, youtubeUrl, scheduledAt, duration, hostName, status } = body;
+        const { title, thumbnailUrl, shortDescription, description, instructorName, youtubeUrl, scheduledAt, duration, timezone, status, providerType, providerVideoId, embedUrl } = body;
         if (!title) return badRequest('title is required');
         if (!youtubeUrl) return badRequest('youtubeUrl is required');
         if (!scheduledAt) return badRequest('scheduledAt is required');
+        const parsed = parseYouTubeUrl(youtubeUrl);
         const now = new Date().toISOString();
         const item = {
           sessionId: randomUUID(),
           title,
+          thumbnailUrl: thumbnailUrl || '',
+          shortDescription: shortDescription || '',
           description: description || '',
+          instructorName: instructorName || ctx.email,
           youtubeUrl,
           scheduledAt,
           duration: Number(duration) || 60,
-          hostName: hostName || ctx.email,
-          status: status || 'upcoming',
+          timezone: timezone || 'UTC',
+          status: (status || 'UPCOMING').toUpperCase(),
+          providerType: providerType || 'YOUTUBE',
+          providerVideoId: providerVideoId || parsed?.providerVideoId || '',
+          embedUrl: embedUrl || parsed?.embedUrl || '',
           createdBy: ctx.email,
           createdAt: now,
+          updatedBy: ctx.email,
+          updatedAt: now,
+          // legacy compat
+          hostName: instructorName || ctx.email,
         };
         await ddb.send(new PutCommand({ TableName: TABLES.liveSessions, Item: item }));
         return created(item);
@@ -292,7 +357,19 @@ export async function handler(event) {
       if (method === 'PUT' && id) {
         const existing = await ddb.send(new GetCommand({ TableName: TABLES.liveSessions, Key: { sessionId: id } }));
         if (!existing.Item) return notFound('Session not found');
-        const updated = { ...existing.Item, ...body, sessionId: id };
+        const now = new Date().toISOString();
+        const parsed = body.youtubeUrl ? parseYouTubeUrl(body.youtubeUrl) : null;
+        const updated = {
+          ...existing.Item,
+          ...body,
+          sessionId: id,
+          updatedBy: ctx.email,
+          updatedAt: now,
+          ...(body.status ? { status: body.status.toUpperCase() } : {}),
+          ...(parsed ? { providerVideoId: parsed.providerVideoId, embedUrl: parsed.embedUrl } : {}),
+          // keep legacy hostName in sync
+          ...(body.instructorName ? { hostName: body.instructorName } : {}),
+        };
         await ddb.send(new PutCommand({ TableName: TABLES.liveSessions, Item: updated }));
         return ok(updated);
       }

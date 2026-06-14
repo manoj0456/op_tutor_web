@@ -1,335 +1,381 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from '@/context/AuthContext'
 import { usePermissions } from '@/context/PermissionContext'
-import type { OpLiveSession } from '@/types'
-import { PermissionGate } from '@/components/shared/PermissionGate'
+import type { LiveSession, SessionStatus } from '@/types'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? ''
 
-function getLiveEmbedUrl(url: string): string | null {
+// ── YouTube helpers ────────────────────────────────────────────
+function parseYouTubeUrl(url: string): { providerVideoId: string; embedUrl: string } | null {
   if (!url) return null
-  const m = url.match(/(?:v=|youtu\.be\/|embed\/|live\/)([A-Za-z0-9_-]{11})/)
-  if (m) return `https://www.youtube.com/embed/${m[1]}?autoplay=1&rel=0`
-  if (url.includes('youtube.com/embed/')) return url
+  const patterns = [
+    /youtube\.com\/watch\?v=([^&\n?#]+)/,
+    /youtu\.be\/([^&\n?#]+)/,
+    /youtube\.com\/embed\/([^&\n?#]+)/,
+    /youtube\.com\/live\/([^&\n?#]+)/,
+  ]
+  for (const p of patterns) {
+    const m = url.match(p)
+    if (m) return { providerVideoId: m[1], embedUrl: `https://www.youtube.com/embed/${m[1]}` }
+  }
   return null
 }
 
-function formatDate(iso: string) {
-  if (!iso) return ''
-  return new Date(iso).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
-}
-function formatTime(iso: string) {
-  if (!iso) return ''
-  return new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
+function getSessionThumbnail(s: LiveSession): string {
+  if (s.thumbnailUrl) return s.thumbnailUrl
+  if (s.providerVideoId) return `https://img.youtube.com/vi/${s.providerVideoId}/hqdefault.jpg`
+  const parsed = parseYouTubeUrl(s.youtubeUrl)
+  if (parsed) return `https://img.youtube.com/vi/${parsed.providerVideoId}/hqdefault.jpg`
+  return ''
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const styles: Record<string, string> = {
-    live: 'bg-red-100 text-red-600',
-    upcoming: 'bg-blue-100 text-blue-600',
-    ended: 'bg-gray-100 text-gray-500',
+function getSessionEmbedUrl(s: LiveSession, autoplay = false): string {
+  const base = s.embedUrl || (parseYouTubeUrl(s.youtubeUrl)?.embedUrl ?? '')
+  return base ? `${base}?rel=0${autoplay ? '&autoplay=1' : ''}` : ''
+}
+
+// Normalize data from API (handles both old and new field shapes)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function normalizeSession(s: any): LiveSession {
+  const ytUrl = s.youtubeUrl || ''
+  const parsed = parseYouTubeUrl(ytUrl)
+  // Map old lowercase statuses to new uppercase
+  const statusMap: Record<string, SessionStatus> = {
+    live: 'LIVE', upcoming: 'UPCOMING', ended: 'COMPLETED', completed: 'COMPLETED', cancelled: 'CANCELLED',
+  }
+  const rawStatus = (s.status || 'UPCOMING') as string
+  const status: SessionStatus = rawStatus.toUpperCase() in { LIVE: 1, UPCOMING: 1, COMPLETED: 1, CANCELLED: 1 }
+    ? (rawStatus.toUpperCase() as SessionStatus)
+    : (statusMap[rawStatus.toLowerCase()] ?? 'UPCOMING')
+
+  return {
+    ...s,
+    status,
+    shortDescription: s.shortDescription || s.description || '',
+    description: s.description || '',
+    instructorName: s.instructorName || s.hostName || '',
+    timezone: s.timezone || 'UTC',
+    providerType: s.providerType || 'YOUTUBE',
+    providerVideoId: s.providerVideoId || parsed?.providerVideoId || '',
+    embedUrl: s.embedUrl || parsed?.embedUrl || '',
+    youtubeUrl: ytUrl,
+  }
+}
+
+function formatDateTime(iso: string, timezone: string) {
+  if (!iso) return ''
+  try {
+    return new Date(iso).toLocaleString('en-US', {
+      weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', hour12: true, timeZone: timezone,
+    }) + ` (${timezone})`
+  } catch {
+    return new Date(iso).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })
+  }
+}
+
+function formatDateShort(iso: string, timezone: string) {
+  if (!iso) return ''
+  try {
+    return new Date(iso).toLocaleString('en-US', {
+      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true, timeZone: timezone,
+    })
+  } catch {
+    return new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })
+  }
+}
+
+// ── Countdown hook ─────────────────────────────────────────────
+function useCountdown(targetIso: string) {
+  const [display, setDisplay] = useState('')
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  useEffect(() => {
+    const update = () => {
+      const diff = new Date(targetIso).getTime() - Date.now()
+      if (diff <= 0) { setDisplay('Starting soon'); return }
+      const d = Math.floor(diff / 86400000)
+      const h = Math.floor((diff % 86400000) / 3600000)
+      const m = Math.floor((diff % 3600000) / 60000)
+      const s = Math.floor((diff % 60000) / 1000)
+      setDisplay(`${d > 0 ? `${d}d ` : ''}${String(h).padStart(2, '0')}h ${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`)
+    }
+    update()
+    timerRef.current = setInterval(update, 1000)
+    return () => { if (timerRef.current) clearInterval(timerRef.current) }
+  }, [targetIso])
+
+  return display
+}
+
+// ── Status badge ───────────────────────────────────────────────
+function StatusBadge({ status }: { status: SessionStatus }) {
+  const styles: Record<SessionStatus, string> = {
+    LIVE: 'bg-red-100 text-red-600',
+    UPCOMING: 'bg-blue-100 text-blue-600',
+    COMPLETED: 'bg-gray-100 text-gray-500',
+    CANCELLED: 'bg-orange-100 text-orange-600',
+  }
+  const labels: Record<SessionStatus, string> = {
+    LIVE: '● LIVE', UPCOMING: 'Upcoming', COMPLETED: 'Completed', CANCELLED: 'Cancelled',
   }
   return (
-    <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full uppercase tracking-wide ${styles[status] ?? styles.upcoming}`}>
-      {status === 'live' ? '● LIVE' : status}
+    <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full uppercase tracking-wide ${styles[status]}`}>
+      {labels[status]}
     </span>
   )
 }
 
-function SessionDetailModal({ session, onClose, canManage, onDelete, onEdit, getToken }: {
-  session: OpLiveSession; onClose: () => void; canManage: boolean
-  onDelete: (id: string) => void; onEdit: (s: OpLiveSession) => void; getToken: () => Promise<string>
-}) {
-  const embedUrl = getLiveEmbedUrl(session.youtubeUrl)
-  const [deleting, setDeleting] = useState(false)
-
-  const handleDelete = async () => {
-    if (!confirm('Delete this session?')) return
-    setDeleting(true)
-    try {
-      const token = await getToken()
-      await fetch(`${API_URL}/live-sessions/${session.sessionId}`, {
-        method: 'DELETE', headers: { Authorization: `Bearer ${token}` },
-      })
-      onDelete(session.sessionId)
-    } catch { alert('Failed to delete session') }
-    finally { setDeleting(false) }
-  }
-
+// ── Countdown display ──────────────────────────────────────────
+function CountdownTimer({ scheduledAt }: { scheduledAt: string }) {
+  const display = useCountdown(scheduledAt)
   return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
-        <div className="p-6">
-          <div className="flex items-start justify-between mb-4">
-            <div>
-              <div className="mb-1"><StatusBadge status={session.status} /></div>
-              <h2 className="text-xl font-bold text-gray-900">{session.title}</h2>
-            </div>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none shrink-0">x</button>
-          </div>
-
-          {(session.status === 'live' || session.status === 'upcoming') && embedUrl ? (
-            <div className="relative aspect-video bg-black rounded-xl overflow-hidden mb-5 shadow">
-              <iframe src={embedUrl} className="absolute inset-0 w-full h-full"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen title={session.title} />
-            </div>
-          ) : session.status === 'ended' ? (
-            <div className="aspect-video bg-gray-100 rounded-xl flex items-center justify-center mb-5 text-gray-400">
-              <div className="text-center"><div className="text-4xl mb-2">recording</div><p className="text-sm">This session has ended</p></div>
-            </div>
-          ) : null}
-
-          <div className="grid sm:grid-cols-2 gap-3 mb-4 text-sm text-gray-600">
-            <div><span className="text-gray-400">Host: </span>{session.hostName}</div>
-            <div><span className="text-gray-400">Date: </span>{formatDate(session.scheduledAt)} at {formatTime(session.scheduledAt)}</div>
-            <div><span className="text-gray-400">Duration: </span>{session.duration} minutes</div>
-          </div>
-
-          {session.description && (
-            <p className="text-sm text-gray-600 leading-relaxed mb-5 bg-gray-50 rounded-xl p-4">{session.description}</p>
-          )}
-
-          {canManage && (
-            <div className="flex gap-2 pt-4 border-t">
-              <button onClick={() => { onClose(); onEdit(session) }} className="px-4 py-2 text-sm border rounded-lg text-gray-600 hover:bg-gray-50">Edit</button>
-              <button onClick={handleDelete} disabled={deleting} className="px-4 py-2 text-sm border border-red-200 text-red-600 rounded-lg hover:bg-red-50 disabled:opacity-60">
-                {deleting ? 'Deleting...' : 'Delete'}
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
+    <div className="mt-2 flex items-center gap-1.5 text-primary-600">
+      <span className="text-xs font-medium">Starts in:</span>
+      <span className="text-sm font-bold tabular-nums">{display}</span>
     </div>
   )
 }
 
-function SessionFormModal({ initial, onClose, onSave, getToken }: {
-  initial?: OpLiveSession | null; onClose: () => void
-  onSave: (s: OpLiveSession) => void; getToken: () => Promise<string>
-}) {
-  const now = new Date()
-  const defaultDate = now.toISOString().split('T')[0]
-  const toLocal = (iso: string) => {
-    if (!iso) return { date: defaultDate, time: '09:00' }
-    const d = new Date(iso)
-    return { date: d.toISOString().split('T')[0], time: `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}` }
-  }
-  const initDT = initial ? toLocal(initial.scheduledAt) : { date: defaultDate, time: '09:00' }
-
-  const [title, setTitle] = useState(initial?.title ?? '')
-  const [description, setDescription] = useState(initial?.description ?? '')
-  const [youtubeUrl, setYoutubeUrl] = useState(initial?.youtubeUrl ?? '')
-  const [date, setDate] = useState(initDT.date)
-  const [time, setTime] = useState(initDT.time)
-  const [duration, setDuration] = useState(String(initial?.duration ?? 60))
-  const [hostName, setHostName] = useState(initial?.hostName ?? '')
-  const [status, setStatus] = useState<OpLiveSession['status']>(initial?.status ?? 'upcoming')
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-
-  const handleSave = async () => {
-    if (!title.trim()) { setError('Title is required'); return }
-    if (!youtubeUrl.trim()) { setError('YouTube URL is required'); return }
-    setSaving(true); setError('')
-    try {
-      const token = await getToken()
-      const scheduledAt = new Date(`${date}T${time}:00`).toISOString()
-      const method = initial ? 'PUT' : 'POST'
-      const url = initial ? `${API_URL}/live-sessions/${initial.sessionId}` : `${API_URL}/live-sessions`
-      const res = await fetch(url, {
-        method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ title: title.trim(), description: description.trim(), youtubeUrl: youtubeUrl.trim(), scheduledAt, duration: Number(duration), hostName: hostName.trim(), status }),
-      })
-      if (!res.ok) throw new Error(await res.text())
-      onSave(await res.json())
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Save failed')
-    } finally { setSaving(false) }
-  }
+// ── Session card ───────────────────────────────────────────────
+function SessionCard({ session, onClick }: { session: LiveSession; onClick: () => void }) {
+  const thumb = getSessionThumbnail(session)
+  const isLive = session.status === 'LIVE'
+  const isUpcoming = session.status === 'UPCOMING'
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <div className="p-6">
-          <div className="flex items-center justify-between mb-5">
-            <h2 className="text-xl font-bold">{initial ? 'Edit Session' : 'Schedule Live Session'}</h2>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">x</button>
-          </div>
-          {error && <div className="mb-4 p-3 bg-red-50 text-red-600 rounded-lg text-sm">{error}</div>}
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Title *</label>
-              <input className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Live Algebra Q&A" />
+    <button
+      onClick={onClick}
+      className={`w-full text-left bg-white rounded-xl border shadow-sm hover:shadow-md transition overflow-hidden group ${isLive ? 'border-red-200' : 'border-gray-100'}`}
+    >
+      <div className="flex gap-4 p-4">
+        {/* Thumbnail */}
+        <div className="relative w-24 h-16 rounded-lg overflow-hidden shrink-0 bg-gray-200">
+          {thumb ? (
+            <img src={thumb} alt={session.title} className="w-full h-full object-cover" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-gray-300 text-2xl">🎥</div>
+          )}
+          {isLive && (
+            <div className="absolute inset-0 bg-red-600/20 flex items-center justify-center">
+              <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-              <textarea className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none" rows={2} value={description} onChange={e => setDescription(e.target.value)} placeholder="What will be covered..." />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">YouTube Live URL *</label>
-              <input className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" value={youtubeUrl} onChange={e => setYoutubeUrl(e.target.value)} placeholder="https://www.youtube.com/watch?v=..." />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Host Name</label>
-              <input className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" value={hostName} onChange={e => setHostName(e.target.value)} placeholder="Teacher name" />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Date *</label>
-                <input type="date" className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" value={date} onChange={e => setDate(e.target.value)} />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Time</label>
-                <input type="time" className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" value={time} onChange={e => setTime(e.target.value)} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Duration (min)</label>
-                <input type="number" min="15" className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" value={duration} onChange={e => setDuration(e.target.value)} />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                <select className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" value={status} onChange={e => setStatus(e.target.value as OpLiveSession['status'])}>
-                  <option value="upcoming">Upcoming</option>
-                  <option value="live">Live Now</option>
-                  <option value="ended">Ended</option>
-                </select>
-              </div>
-            </div>
-          </div>
-          <div className="flex justify-end gap-3 mt-6 pt-4 border-t">
-            <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
-            <button onClick={handleSave} disabled={saving} className="px-6 py-2 bg-primary-600 text-white text-sm font-semibold rounded-full hover:bg-primary-700 disabled:opacity-60 transition">
-              {saving ? 'Saving...' : initial ? 'Save Changes' : 'Schedule Session'}
-            </button>
-          </div>
+          )}
         </div>
-      </div>
-    </div>
-  )
-}
 
-function SessionCard({ session, onClick }: { session: OpLiveSession; onClick: () => void }) {
-  return (
-    <button onClick={onClick} className="w-full text-left bg-white rounded-xl border border-gray-100 p-5 hover:shadow-md transition group">
-      <div className="flex items-start gap-4">
-        <div className={`w-3 h-3 rounded-full mt-1.5 shrink-0 ${session.status === 'live' ? 'bg-red-500 animate-pulse' : session.status === 'upcoming' ? 'bg-blue-400' : 'bg-gray-300'}`} />
         <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between gap-2">
-            <h3 className="font-semibold text-gray-900 group-hover:text-primary-600 transition text-sm">{session.title}</h3>
+          <div className="flex items-start justify-between gap-2 mb-1">
+            <h3 className="font-semibold text-gray-900 group-hover:text-primary-600 transition text-sm line-clamp-2">
+              {session.title}
+            </h3>
             <StatusBadge status={session.status} />
           </div>
-          <p className="text-xs text-gray-500 mt-1">Host: {session.hostName}</p>
-          <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-400">
-            <span>{formatDate(session.scheduledAt)} at {formatTime(session.scheduledAt)}</span>
+          {session.instructorName && (
+            <p className="text-xs text-gray-500">Instructor: {session.instructorName}</p>
+          )}
+          <div className="flex items-center gap-2 mt-1 text-xs text-gray-400">
+            <span>{formatDateShort(session.scheduledAt, session.timezone)}</span>
+            <span>·</span>
             <span>{session.duration}m</span>
           </div>
-          {session.description && <p className="text-xs text-gray-500 mt-1.5 line-clamp-1">{session.description}</p>}
+          {session.shortDescription && (
+            <p className="text-xs text-gray-500 mt-1 line-clamp-1">{session.shortDescription}</p>
+          )}
+          {isUpcoming && <CountdownTimer scheduledAt={session.scheduledAt} />}
         </div>
       </div>
     </button>
   )
 }
 
+// ── Session detail view ────────────────────────────────────────
+function SessionDetail({ session, onBack }: { session: LiveSession; onBack: () => void }) {
+  const isLive = session.status === 'LIVE'
+  const isUpcoming = session.status === 'UPCOMING'
+  const embedUrl = getSessionEmbedUrl(session, isLive)
+
+  return (
+    <div>
+      <button onClick={onBack} className="mb-6 text-sm text-primary-600 hover:text-primary-700 flex items-center gap-1">
+        ← Back to Live Sessions
+      </button>
+
+      <div className="max-w-3xl mx-auto">
+        <div className="mb-4">
+          <div className="flex items-center gap-2 mb-2">
+            <StatusBadge status={session.status} />
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900">{session.title}</h1>
+          {session.instructorName && (
+            <p className="text-sm text-gray-500 mt-1">Instructor: <span className="font-medium text-gray-700">{session.instructorName}</span></p>
+          )}
+          <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-sm text-gray-500">
+            <span>{formatDateTime(session.scheduledAt, session.timezone)}</span>
+            <span>{session.duration} minutes</span>
+          </div>
+          {isUpcoming && (
+            <div className="mt-3 inline-block bg-primary-50 rounded-xl px-4 py-2">
+              <CountdownTimer scheduledAt={session.scheduledAt} />
+            </div>
+          )}
+        </div>
+
+        {/* Video embed */}
+        {(isLive || isUpcoming) && embedUrl ? (
+          <div className="relative aspect-video bg-black rounded-2xl overflow-hidden shadow-lg mb-6">
+            <iframe
+              src={embedUrl}
+              className="absolute inset-0 w-full h-full"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+              title={session.title}
+            />
+          </div>
+        ) : session.status === 'COMPLETED' ? (
+          <div className="aspect-video bg-gray-100 rounded-2xl flex items-center justify-center mb-6 text-gray-400">
+            <div className="text-center">
+              <div className="text-4xl mb-2">🎬</div>
+              <p className="text-sm">This session has ended</p>
+            </div>
+          </div>
+        ) : session.status === 'CANCELLED' ? (
+          <div className="aspect-video bg-orange-50 rounded-2xl flex items-center justify-center mb-6 text-orange-400">
+            <div className="text-center">
+              <div className="text-4xl mb-2">⚠️</div>
+              <p className="text-sm">This session was cancelled</p>
+            </div>
+          </div>
+        ) : null}
+
+        {session.description && (
+          <div className="p-5 bg-gray-50 rounded-xl">
+            <h3 className="font-semibold text-gray-900 mb-2">About this session</h3>
+            <p className="text-sm text-gray-600 leading-relaxed">{session.description}</p>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Section component ──────────────────────────────────────────
+function Section({ title, sessions, onSelect, emptyMsg }: {
+  title: React.ReactNode; sessions: LiveSession[]; onSelect: (s: LiveSession) => void; emptyMsg: string
+}) {
+  if (sessions.length === 0) return (
+    <div className="mb-8">
+      <h2 className="text-lg font-bold text-gray-900 mb-3">{title}</h2>
+      <p className="text-sm text-gray-400 italic">{emptyMsg}</p>
+    </div>
+  )
+  return (
+    <div className="mb-10">
+      <h2 className="text-lg font-bold text-gray-900 mb-3">{title}</h2>
+      <div className="space-y-3">
+        {sessions.map(s => <SessionCard key={s.sessionId} session={s} onClick={() => onSelect(s)} />)}
+      </div>
+    </div>
+  )
+}
+
+// ── Main page ─────────────────────────────────────────────────
 export default function LivePage() {
   const { user, getIdToken } = useAuth()
-  const { hasPermission, loaded } = usePermissions()
-  const canManage = hasPermission('manage_courses')
+  const { loaded } = usePermissions()
 
-  const [sessions, setSessions] = useState<OpLiveSession[]>([])
+  const [sessions, setSessions] = useState<LiveSession[]>([])
   const [loading, setLoading] = useState(true)
-  const [selected, setSelected] = useState<OpLiveSession | null>(null)
-  const [formSession, setFormSession] = useState<OpLiveSession | null | undefined>(undefined)
-  const [filterStatus, setFilterStatus] = useState<'all' | 'upcoming' | 'live' | 'ended'>('all')
+  const [selected, setSelected] = useState<LiveSession | null>(null)
 
   const loadSessions = useCallback(async () => {
     setLoading(true)
     try {
       const headers: Record<string, string> = {}
-      if (user) { const token = await getIdToken(); headers['Authorization'] = `Bearer ${token}` }
+      if (user) {
+        const token = await getIdToken()
+        headers['Authorization'] = `Bearer ${token}`
+      }
       const res = await fetch(`${API_URL}/live-sessions`, { headers })
-      if (res.ok) setSessions(await res.json())
+      if (res.ok) {
+        const data = await res.json()
+        setSessions(data.map(normalizeSession))
+      }
     } catch { /* silent */ }
     finally { setLoading(false) }
   }, [user, getIdToken])
 
   useEffect(() => { if (loaded) loadSessions() }, [loaded, loadSessions])
 
-  const handleSaved = (saved: OpLiveSession) => {
-    setSessions(prev => {
-      const idx = prev.findIndex(s => s.sessionId === saved.sessionId)
-      return idx >= 0 ? prev.map(s => s.sessionId === saved.sessionId ? saved : s) : [saved, ...prev]
-    })
-    setFormSession(undefined)
+  const liveSessions = sessions.filter(s => s.status === 'LIVE')
+  const upcoming = sessions.filter(s => s.status === 'UPCOMING').sort(
+    (a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()
+  )
+  const past = sessions.filter(s => s.status === 'COMPLETED' || s.status === 'CANCELLED').sort(
+    (a, b) => new Date(b.scheduledAt).getTime() - new Date(a.scheduledAt).getTime()
+  )
+
+  if (selected) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <SessionDetail session={selected} onBack={() => setSelected(null)} />
+      </div>
+    )
   }
-
-  const handleDeleted = (id: string) => { setSessions(prev => prev.filter(s => s.sessionId !== id)); setSelected(null) }
-
-  const filtered = filterStatus === 'all' ? sessions : sessions.filter(s => s.status === filterStatus)
-  const liveCount = sessions.filter(s => s.status === 'live').length
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <div className="flex items-start justify-between mb-6">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Live Classes</h1>
-          <p className="text-gray-500 mt-1">Join real-time sessions with expert teachers</p>
-        </div>
-        <PermissionGate permission="manage_courses">
-          <button onClick={() => setFormSession(null)} className="px-5 py-2.5 bg-primary-600 text-white text-sm font-semibold rounded-full hover:bg-primary-700 transition shadow-sm">
-            + Schedule Session
-          </button>
-        </PermissionGate>
-      </div>
-
-      {liveCount > 0 && (
-        <div className="mb-5 p-4 bg-red-50 border border-red-100 rounded-2xl flex items-center gap-3">
-          <span className="w-3 h-3 rounded-full bg-red-500 animate-pulse shrink-0" />
-          <p className="text-sm font-medium text-red-700">{liveCount} session{liveCount > 1 ? 's' : ''} happening now!</p>
-          <button onClick={() => setFilterStatus('live')} className="ml-auto text-xs text-red-600 font-semibold underline">View live</button>
-        </div>
-      )}
-
-      <div className="flex gap-2 mb-6">
-        {(['all', 'live', 'upcoming', 'ended'] as const).map(s => (
-          <button key={s} onClick={() => setFilterStatus(s)}
-            className={`px-4 py-1.5 rounded-full text-xs font-semibold capitalize transition ${filterStatus === s ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-            {s === 'all' ? 'All' : s}
-          </button>
-        ))}
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-900">Live Sessions</h1>
+        <p className="text-gray-500 mt-1">Join real-time sessions with expert instructors</p>
       </div>
 
       {loading ? (
-        <div className="space-y-3">
-          {[1,2,3,4].map(i => (
-            <div key={i} className="bg-white rounded-xl border p-5 animate-pulse">
-              <div className="flex gap-4"><div className="w-3 h-3 rounded-full bg-gray-200 mt-1.5"/><div className="flex-1 space-y-2"><div className="h-4 bg-gray-200 rounded w-2/3"/><div className="h-3 bg-gray-200 rounded w-1/3"/></div></div>
+        <div className="space-y-4">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="bg-white rounded-xl border p-4 animate-pulse flex gap-4">
+              <div className="w-24 h-16 rounded-lg bg-gray-200 shrink-0" />
+              <div className="flex-1 space-y-2">
+                <div className="h-4 bg-gray-200 rounded w-2/3" />
+                <div className="h-3 bg-gray-200 rounded w-1/3" />
+              </div>
             </div>
           ))}
         </div>
-      ) : filtered.length === 0 ? (
+      ) : sessions.length === 0 ? (
         <div className="text-center py-20 text-gray-400">
-          <div className="text-5xl mb-3">live</div>
-          <p className="font-medium">{sessions.length === 0 ? 'No sessions scheduled yet' : 'No sessions in this category'}</p>
-          <PermissionGate permission="manage_courses">
-            {sessions.length === 0 && <button onClick={() => setFormSession(null)} className="mt-4 text-primary-600 text-sm hover:underline">Schedule your first session</button>}
-          </PermissionGate>
+          <div className="text-5xl mb-3">🎥</div>
+          <p className="font-medium">No live sessions scheduled yet</p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {filtered.map(session => <SessionCard key={session.sessionId} session={session} onClick={() => setSelected(session)} />)}
-        </div>
-      )}
+        <>
+          {/* Live Now */}
+          {liveSessions.length > 0 && (
+            <div className="mb-10">
+              <h2 className="text-lg font-bold text-gray-900 mb-3 flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse inline-block" />
+                Live Now
+              </h2>
+              <div className="space-y-3">
+                {liveSessions.map(s => <SessionCard key={s.sessionId} session={s} onClick={() => setSelected(s)} />)}
+              </div>
+            </div>
+          )}
 
-      {selected && (
-        <SessionDetailModal session={selected} onClose={() => setSelected(null)} canManage={canManage}
-          onDelete={handleDeleted} onEdit={s => { setSelected(null); setFormSession(s) }} getToken={getIdToken} />
-      )}
-      {formSession !== undefined && (
-        <SessionFormModal initial={formSession} onClose={() => setFormSession(undefined)} onSave={handleSaved} getToken={getIdToken} />
+          <Section
+            title="Upcoming Sessions"
+            sessions={upcoming}
+            onSelect={setSelected}
+            emptyMsg="No upcoming sessions scheduled."
+          />
+
+          <Section
+            title="Past Sessions"
+            sessions={past}
+            onSelect={setSelected}
+            emptyMsg="No past sessions yet."
+          />
+        </>
       )}
     </div>
   )
