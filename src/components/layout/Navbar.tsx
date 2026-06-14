@@ -6,7 +6,7 @@ import { usePermissions } from '@/context/PermissionContext'
 
 export function Navbar() {
   const { user, userEmail, signOut } = useAuth()
-  const { isSuperAdmin, loaded }     = usePermissions()
+  const { isSuperAdmin, hasPermission, loaded } = usePermissions()
   const router = useRouter()
 
   const handleLogout = () => {
@@ -23,6 +23,9 @@ export function Navbar() {
           <Link href="/live" className="text-sm text-gray-600 hover:text-primary-600 transition">Live</Link>
           {loaded && isSuperAdmin && (
             <Link href="/roles" className="text-sm text-gray-600 hover:text-primary-600 transition">Roles</Link>
+          )}
+          {loaded && hasPermission('manage_courses') && (
+            <Link href="/admin/courses" className="text-sm text-gray-600 hover:text-primary-600 transition">Manage</Link>
           )}
           {user ? (
             <div className="flex items-center gap-3">

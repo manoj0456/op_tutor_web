@@ -1,120 +1,40 @@
-// ─── User & Auth ──────────────────────────────────────────────
-export type UserRole = 'student' | 'teacher' | 'admin'
 
-export interface User {
-  id: string
-  name: string
-  email: string
-  avatar?: string
-  role: UserRole
-  createdAt: string
+
+// ─── Courses (OpTutor v2 — multi-video) ──────────────────────
+export interface CourseVideo {
+  videoId: string
+  title: string
+  youtubeUrl: string
+  /** Future-proof: swap 'youtube' for 'own-server' without changing UI */
+  source: 'youtube' | 'own-server'
 }
 
-// ─── Courses ──────────────────────────────────────────────────
-export type CourseLevel = 'beginner' | 'intermediate' | 'advanced'
-export type CourseStatus = 'draft' | 'published' | 'archived'
-export type CourseCategory =
-  | 'technology' | 'math' | 'science' | 'physics'
-  | 'biology' | 'arts' | 'sports' | 'ai' | 'other'
+export type OpCourseStatus = 'published' | 'draft'
 
-export interface Course {
-  id: string
+export interface OpCourse {
+  courseId: string
   title: string
   description: string
-  thumbnail?: string
-  teacherId: string
-  teacher: User
-  category: CourseCategory
-  level: CourseLevel
-  status: CourseStatus
-  price: number
-  isFree: boolean
-  totalDuration: number   // minutes
-  totalLessons: number
-  enrolledCount: number
-  rating: number
-  curriculum: Module[]
+  category: string
+  videos: CourseVideo[]
+  status: OpCourseStatus
+  createdBy: string
   createdAt: string
-  updatedAt: string
+  updatedAt?: string
 }
 
-export interface Module {
-  id: string
-  courseId: string
-  title: string
-  order: number
-  lessons: Lesson[]
-}
+// ─── Live Sessions (OpTutor v2) ────────────────────────────────
+export type OpSessionStatus = 'upcoming' | 'live' | 'ended'
 
-export interface Lesson {
-  id: string
-  moduleId: string
+export interface OpLiveSession {
+  sessionId: string
   title: string
-  type: 'video' | 'quiz' | 'article' | 'exercise'
-  duration: number   // minutes
-  videoUrl?: string
-  content?: string
-  order: number
-  isPreview: boolean
-}
-
-// ─── Live Sessions ────────────────────────────────────────────
-export type LiveSessionStatus = 'scheduled' | 'live' | 'ended' | 'cancelled'
-
-export interface LiveSession {
-  id: string
-  title: string
-  description?: string
-  teacherId: string
-  teacher: User
-  courseId?: string
+  description: string
+  youtubeUrl: string
   scheduledAt: string
-  duration: number    // minutes
-  status: LiveSessionStatus
-  maxStudents: number
-  enrolledStudents: number
-  recordingUrl?: string
-  roomId: string
-  topics: string[]
-}
-
-// ─── Enrollment & Progress ────────────────────────────────────
-export interface Enrollment {
-  id: string
-  userId: string
-  courseId: string
-  enrolledAt: string
-  progress: number    // 0–100
-  completedLessons: string[]
-  lastAccessedAt: string
-}
-
-// ─── Quiz & Exercises ─────────────────────────────────────────
-export interface Quiz {
-  id: string
-  lessonId: string
-  questions: Question[]
-}
-
-export interface Question {
-  id: string
-  text: string
-  options: string[]
-  correctIndex: number
-  explanation?: string
-}
-
-// ─── API Responses ────────────────────────────────────────────
-export interface ApiResponse<T> {
-  data: T
-  message?: string
-  success: boolean
-}
-
-export interface PaginatedResponse<T> {
-  data: T[]
-  total: number
-  page: number
-  limit: number
-  totalPages: number
+  duration: number
+  hostName: string
+  status: OpSessionStatus
+  createdBy: string
+  createdAt: string
 }
