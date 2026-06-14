@@ -360,7 +360,7 @@ function LiveSessionsTab({ getToken }: { getToken: () => Promise<string> }) {
         )}
       </div>
 
-      y(showForm || editing) && (
+      {(showForm || editing) && (
         <div className="mb-6">
           <SessionForm initial={editing} onSave={handleSaved} onCancel={() => { setShowForm(false); setEditing(null) }} getToken={getToken} />
         </div>
