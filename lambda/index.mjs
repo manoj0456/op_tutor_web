@@ -7,11 +7,23 @@ import {
   DeleteCommand,
   UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import {
+  CognitoIdentityProviderClient,
+  AdminCreateUserCommand,
+  AdminAddUserToGroupCommand,
+  AdminDeleteUserCommand,
+} from '@aws-sdk/client-cognito-identity-provider';
 import { randomUUID } from 'crypto';
 
 const REGION = process.env.AWS_REGION || 'us-east-2';
 const client = new DynamoDBClient({ region: REGION });
 const ddb = DynamoDBDocumentClient.from(client);
+const s3 = new S3Client({ region: REGION });
+const cognito = new CognitoIdentityProviderClient({ region: REGION });
+
+const S3_BUCKET = process.env.PROFILE_BUCKET || 'optutor-com';
+const USER_POOL_ID = process.env.COGNITO_USER_POOL_ID || '';
 
 const TABLES = {
   roles: 'OpTutor-Roles',
@@ -23,8 +35,10 @@ const TABLES = {
   employees: 'optutor-employees',
 };
 
+// Cache of tables we've ensured exist this container lifetime
 const ensuredTables = new Set();
 
+// Create a PAY_PER_REQUEST table on first use if it doesn't exist
 async function ensureTable(tableName, pk) {
   if (ensuredTables.has(tableName)) return;
   try {
@@ -41,6 +55,7 @@ async function ensureTable(tableName, pk) {
       KeySchema: [{ AttributeName: pk, KeyType: 'HASH' }],
       BillingMode: 'PAY_PER_REQUEST',
     }));
+    // Best-effort wait for ACTIVE
     for (let i = 0; i < 20; i++) {
       try {
         const d = await client.send(new DescribeTableCommand({ TableName: tableName }));
@@ -52,6 +67,28 @@ async function ensureTable(tableName, pk) {
   } catch (err) {
     if (err.name === 'ResourceInUseException') { ensuredTables.add(tableName); return; }
     throw err;
+  }
+}
+
+// Upload a base64 data URL to S3, returns the public URL (or '' on failure)
+async function uploadProfilePicture(userId, dataUrl) {
+  if (!dataUrl || !dataUrl.startsWith('data:')) return '';
+  const m = dataUrl.match(/^data:([^;]+);base64,(.*)$/);
+  if (!m) return '';
+  const contentType = m[1] || 'image/jpeg';
+  const buffer = Buffer.from(m[2], 'base64');
+  const key = `profile-pictures/${userId}.jpg`;
+  try {
+    await s3.send(new PutObjectCommand({
+      Bucket: S3_BUCKET,
+      Key: key,
+      Body: buffer,
+      ContentType: contentType,
+    }));
+    return `https://${S3_BUCKET}.s3.${REGION}.amazonaws.com/${key}`;
+  } catch (err) {
+    console.error('S3 upload failed:', err);
+    return '';
   }
 }
 
@@ -105,7 +142,7 @@ function extractEmail(event) {
   } catch { return null; }
 }
 
-// ── YouTube URL parser ─────────────────────────────────────────
+// Ã¢ÂÂÃ¢ÂÂ YouTube URL parser Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
 function parseYouTubeUrl(url) {
   if (!url) return null;
   const patterns = [
@@ -121,7 +158,7 @@ function parseYouTubeUrl(url) {
   return null;
 }
 
-// ── Get caller email + permissions ─────────────────────────────
+// Ã¢ÂÂÃ¢ÂÂ Get caller email + permissions Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
 async function getCallerContext(event) {
   const email = extractEmail(event);
   if (!email) return { email: null, roleRecord: null, permissions: new Set() };
@@ -140,7 +177,7 @@ async function getCallerContext(event) {
   }
 }
 
-// ── Normalize video object (handles old + new shapes) ─────────
+// Ã¢ÂÂÃ¢ÂÂ Normalize video object (handles old + new shapes) Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
 function normalizeVideo(v, index) {
   const ytUrl = v.youtubeUrl || '';
   const parsed = parseYouTubeUrl(ytUrl);
@@ -172,32 +209,58 @@ export async function handler(event) {
   const body = parseBody(event);
 
   try {
-    // ── Roles ──────────────────────────────────────────────────
+    // ââ Roles ââââââââââââââââââââââââââââââââââââââââââââ
     if (resource === 'roles') {
       if (method === 'GET' && !id) return ok((await scanAll(TABLES.roles)).map(normalizeRole));
       const ctx = await getCallerContext(event);
       if (!ctx.email) return unauthorized();
+      if (!ctx.permissions.has('manage_roles')) return forbidden();
+
+      if (method === 'POST' && !id) {
+        const name = body.roleName || body.name;
+        if (!name) return badRequest('roleName is required');
+        const now = new Date().toISOString();
+        const item = {
+          roleId: body.roleId || randomUUID(),
+          name,
+          description: body.description || '',
+          permissions: Array.isArray(body.permissions) ? body.permissions : [],
+          isSystem: !!(body.isSystemRole || body.isSystem),
+          createdBy: ctx.email,
+          createdAt: now,
+        };
+        await ddb.send(new PutCommand({ TableName: TABLES.roles, Item: item }));
+        return created(normalizeRole(item));
+      }
+
       if (method === 'PUT' && id) {
-        if (!ctx.permissions.has('manage_roles')) return forbidden();
         const existing = await ddb.send(new GetCommand({ TableName: TABLES.roles, Key: { roleId: id } }));
         if (!existing.Item) return notFound('Role not found');
-        const updated = { ...existing.Item, ...body, roleId: id };
+        const patch = { ...body };
+        if (patch.roleName) { patch.name = patch.roleName; delete patch.roleName; }
+        if (typeof patch.isSystemRole !== 'undefined') { patch.isSystem = !!patch.isSystemRole; delete patch.isSystemRole; }
+        const updated = { ...existing.Item, ...patch, roleId: id, updatedBy: ctx.email, updatedAt: new Date().toISOString() };
         await ddb.send(new PutCommand({ TableName: TABLES.roles, Item: updated }));
         return ok(normalizeRole(updated));
       }
-    }
 
-    // ── Users ──────────────────────────────────────────────────
+      if (method === 'DELETE' && id) {
+        const existing = await ddb.send(new GetCommand({ TableName: TABLES.roles, Key: { roleId: id } }));
+        if (!existing.Item) return notFound('Role not found');
+        if (existing.Item.isSystem) return forbidden('System roles cannot be deleted');
+        await ddb.send(new DeleteCommand({ TableName: TABLES.roles, Key: { roleId: id } }));
+        return ok({ deleted: true, roleId: id });
+      }
+    }
+    // Ã¢ÂÂÃ¢ÂÂ Users Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
     if (resource === 'users') {
       const ctx = await getCallerContext(event);
       if (!ctx.email) return unauthorized();
 
-      // ── Activity heartbeat (any authenticated user) ──────────
+      // ── Activity heartbeat (any authenticated user) ───────────
       if (method === 'POST' && id === 'heartbeat') {
         const seconds = Math.min(Number(body.seconds) || 60, 300);
         const now = new Date().toISOString();
-        // Find which table the caller belongs to (student or employee) by email scan.
-        // Cheaper path: try students by userId from token sub, else employees.
         const sub = body.userId || '';
         let updated = false;
         for (const table of [TABLES.students, TABLES.employees]) {
@@ -260,7 +323,7 @@ export async function handler(event) {
       }
     }
 
-    // ── Role Requests ──────────────────────────────────────────
+    // Ã¢ÂÂÃ¢ÂÂ Role Requests Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
     if (resource === 'role-requests') {
       if (method === 'POST') {
         const { email, name, requestedRole } = body;
@@ -279,7 +342,7 @@ export async function handler(event) {
       if (method === 'GET') return ok(await scanAll(TABLES.roleRequests));
     }
 
-    // ── Courses ────────────────────────────────────────────────
+    // Ã¢ÂÂÃ¢ÂÂ Courses Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
     if (resource === 'courses') {
       if (method === 'GET' && !id) {
         const ctx = await getCallerContext(event);
@@ -304,7 +367,7 @@ export async function handler(event) {
       if (!ctx.permissions.has('manage_courses')) return forbidden();
 
       if (method === 'POST') {
-        const { title, thumbnailUrl, shortDescription, description, category, tags, difficultyLevel, instructorName, videos, status } = body;
+        const { title, thumbnailUrl, shortDescription, description, category, tags, difficultyLevel, instructorName, videos, status, isPaid } = body;
         if (!title) return badRequest('title is required');
         if (!videos || !Array.isArray(videos) || videos.length === 0) return badRequest('At least one video is required');
         const now = new Date().toISOString();
@@ -319,6 +382,7 @@ export async function handler(event) {
           tags: Array.isArray(tags) ? tags : [],
           difficultyLevel: difficultyLevel || 'BEGINNER',
           instructorName: instructorName || ctx.email,
+          isPaid: !!isPaid,
           videos: videos.map((v, i) => normalizeVideo(v, i)),
           status: normalizedStatus,
           createdBy: ctx.email,
@@ -345,6 +409,7 @@ export async function handler(event) {
           updatedBy: ctx.email,
           updatedAt: now,
           ...(incomingStatus ? { status: incomingStatus } : {}),
+          ...(typeof body.isPaid !== 'undefined' ? { isPaid: !!body.isPaid } : {}),
           ...(!wasPublished && willPublish ? { publishedAt: now } : {}),
         };
         if (Array.isArray(updated.videos)) {
@@ -363,7 +428,7 @@ export async function handler(event) {
       }
     }
 
-    // ── Live Sessions ──────────────────────────────────────────
+    // Ã¢ÂÂÃ¢ÂÂ Live Sessions Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
     if (resource === 'live-sessions') {
       if (method === 'GET' && !id) {
         const all = await scanAll(TABLES.liveSessions);
@@ -387,7 +452,7 @@ export async function handler(event) {
       if (!ctx.permissions.has('manage_courses')) return forbidden();
 
       if (method === 'POST') {
-        const { title, thumbnailUrl, shortDescription, description, instructorName, youtubeUrl, scheduledAt, duration, timezone, status, providerType, providerVideoId, embedUrl } = body;
+        const { title, thumbnailUrl, shortDescription, description, instructorName, youtubeUrl, scheduledAt, duration, timezone, status, providerType, providerVideoId, embedUrl, isPaid } = body;
         if (!title) return badRequest('title is required');
         if (!youtubeUrl) return badRequest('youtubeUrl is required');
         if (!scheduledAt) return badRequest('scheduledAt is required');
@@ -405,6 +470,7 @@ export async function handler(event) {
           duration: Number(duration) || 60,
           timezone: timezone || 'UTC',
           status: (status || 'UPCOMING').toUpperCase(),
+          isPaid: !!isPaid,
           providerType: providerType || 'YOUTUBE',
           providerVideoId: providerVideoId || parsed?.providerVideoId || '',
           embedUrl: embedUrl || parsed?.embedUrl || '',
@@ -431,6 +497,7 @@ export async function handler(event) {
           updatedBy: ctx.email,
           updatedAt: now,
           ...(body.status ? { status: body.status.toUpperCase() } : {}),
+          ...(typeof body.isPaid !== 'undefined' ? { isPaid: !!body.isPaid } : {}),
           ...(parsed ? { providerVideoId: parsed.providerVideoId, embedUrl: parsed.embedUrl } : {}),
           // keep legacy hostName in sync
           ...(body.instructorName ? { hostName: body.instructorName } : {}),
@@ -446,27 +513,55 @@ export async function handler(event) {
     }
 
 
-    // ── Students (read for Users page) ─────────────────────────
+    // Ã¢ÂÂÃ¢ÂÂ Students (self-service signup profiles) Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
     if (resource === 'students') {
+      // Public self-registration: store profile after Cognito verification
+      if (method === 'POST' && !id) {
+        await ensureTable(TABLES.students, 'userId');
+        const { userId, email, fullName, phone, dateOfBirth, profilePictureDataUrl,
+                paymentMethodAdded, cardLastFour, cardHolderName, cardExpiry } = body;
+        if (!userId || !email) return badRequest('userId and email are required');
+        const now = new Date().toISOString();
+        let profilePictureUrl = '';
+        if (profilePictureDataUrl) {
+          profilePictureUrl = await uploadProfilePicture(userId, profilePictureDataUrl);
+        }
+        const item = {
+          userId,
+          email,
+          fullName: fullName || '',
+          phone: phone || '',
+          dateOfBirth: dateOfBirth || '',
+          profilePictureUrl,
+          paymentMethodAdded: !!paymentMethodAdded,
+          cardLastFour: (cardLastFour || '').slice(-4),
+          cardHolderName: cardHolderName || '',
+          cardExpiry: cardExpiry || '',
+          enrolledCourses: [],
+          totalTimeSpentSeconds: 0,
+          createdAt: now,
+          lastActiveAt: now,
+        };
+        await ddb.send(new PutCommand({ TableName: TABLES.students, Item: item }));
+        return created(item);
+      }
+
+      // Authenticated reads
       const ctx = await getCallerContext(event);
       if (!ctx.email) return unauthorized();
-      if (!ctx.permissions.has('manage_users')) return forbidden();
-      await ensureTable(TABLES.students, 'userId');
-      if (method === 'GET' && !id) return ok(await scanAll(TABLES.students));
+
+      if (method === 'GET' && !id) {
+        if (!ctx.permissions.has('manage_users')) return forbidden();
+        await ensureTable(TABLES.students, 'userId');
+        return ok(await scanAll(TABLES.students));
+      }
+
       if (method === 'GET' && id) {
+        await ensureTable(TABLES.students, 'userId');
         const res = await ddb.send(new GetCommand({ TableName: TABLES.students, Key: { userId: id } }));
         if (!res.Item) return notFound('Student not found');
         return ok(res.Item);
       }
-    }
-
-    // ── Employees (read for Users page) ────────────────────────
-    if (resource === 'employees') {
-      const ctx = await getCallerContext(event);
-      if (!ctx.email) return unauthorized();
-      if (!ctx.permissions.has('manage_users')) return forbidden();
-      await ensureTable(TABLES.employees, 'userId');
-      if (method === 'GET' && !id) return ok(await scanAll(TABLES.employees));
     }
 
     return notFound('Unknown resource: ' + resource);

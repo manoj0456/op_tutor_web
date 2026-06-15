@@ -5,7 +5,7 @@ import { Navbar } from '@/components/layout/Navbar'
 import { ActivityTracker } from '@/components/shared/ActivityTracker'
 
 export const metadata: Metadata = {
-  title: 'OpTutor – Future-Ready Learning',
+  title: 'OpTutor â Future-Ready Learning',
   description: 'Learn technology, AI, math, science and more with live classes and recorded courses.',
   keywords: ['online tutoring', 'AI learning', 'live classes', 'technology education'],
   icons: {
@@ -20,7 +20,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" suppressHydrationWarning>
       <body>
         <Providers>
-          <ActivityTracker />
           <Navbar />
           {children}
         </Providers>

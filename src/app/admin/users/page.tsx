@@ -35,15 +35,15 @@ interface EmployeeRecord {
 }
 
 function formatDate(iso?: string): string {
-  if (!iso) return '—'
+  if (!iso) return 'â'
   try { return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) }
-  catch { return '—' }
+  catch { return 'â' }
 }
 
 function formatDateTime(iso?: string): string {
-  if (!iso) return '—'
+  if (!iso) return 'â'
   try { return new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }
-  catch { return '—' }
+  catch { return 'â' }
 }
 
 function formatDuration(seconds?: number): string {
@@ -138,7 +138,7 @@ export default function UsersPage() {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <div className="text-5xl mb-4">🔒</div>
+          <div className="text-5xl mb-4">ð</div>
           <h1 className="text-2xl font-bold text-gray-800 mb-2">Access Denied</h1>
           <p className="text-gray-500">You need the manage_users permission to view this page.</p>
         </div>
@@ -200,11 +200,11 @@ export default function UsersPage() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <Avatar url={s.profilePictureUrl} name={s.fullName || s.email} />
-                        <span className="font-medium text-gray-900 text-sm">{s.fullName || '—'}</span>
+                        <span className="font-medium text-gray-900 text-sm">{s.fullName || 'â'}</span>
                       </div>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-500">{s.email}</td>
-                    <td className="px-4 py-3 text-sm text-gray-500">{s.phone || '—'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-500">{s.phone || 'â'}</td>
                     <td className="px-4 py-3 text-sm text-gray-500">{s.enrolledCourses?.length ?? 0}</td>
                     <td className="px-4 py-3 text-sm text-gray-500">{formatDuration(s.totalTimeSpentSeconds)}</td>
                     <td className="px-4 py-3 text-sm text-gray-500">{formatDateTime(s.lastActiveAt)}</td>
@@ -221,9 +221,9 @@ export default function UsersPage() {
                         <div className="grid sm:grid-cols-2 gap-4 text-sm">
                           <div>
                             <p className="text-gray-400 text-xs uppercase mb-1">Profile</p>
-                            <p>Date of birth: {s.dateOfBirth || '—'}</p>
+                            <p>Date of birth: {s.dateOfBirth || 'â'}</p>
                             <p>User ID: <span className="font-mono text-xs">{s.userId}</span></p>
-                            <p>Card on file: {s.cardLastFour ? `•••• ${s.cardLastFour}` : '—'}</p>
+                            <p>Card on file: {s.cardLastFour ? `â¢â¢â¢â¢ ${s.cardLastFour}` : 'â'}</p>
                           </div>
                           <div>
                             <p className="text-gray-400 text-xs uppercase mb-1">Enrolled courses</p>
@@ -262,14 +262,14 @@ export default function UsersPage() {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <Avatar url={e.profilePictureUrl} name={e.fullName || e.email} />
-                      <span className="font-medium text-gray-900 text-sm">{e.fullName || '—'}</span>
+                      <span className="font-medium text-gray-900 text-sm">{e.fullName || 'â'}</span>
                     </div>
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-500">{e.email}</td>
                   <td className="px-4 py-3 text-sm">
-                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-primary-50 text-primary-700">{e.role || '—'}</span>
+                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-primary-50 text-primary-700">{e.role || 'â'}</span>
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-500">{e.department || '—'}</td>
+                  <td className="px-4 py-3 text-sm text-gray-500">{e.department || 'â'}</td>
                   <td className="px-4 py-3 text-sm text-gray-500">{formatDateTime(e.lastActiveAt)}</td>
                   <td className="px-4 py-3 text-sm text-gray-500">{formatDate(e.createdAt)}</td>
                 </tr>
