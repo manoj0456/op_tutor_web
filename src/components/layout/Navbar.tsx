@@ -27,8 +27,7 @@ return (
 {loaded && hasPermission('manage_courses') && (
 <Link href="/content-management" className="text-sm text-gray-600 hover:text-primary-600 transition">Content Management</Link>
 )}
-{loaded && hasPermission('manage_users') && (
-)}
+
 {user ? (
 <div className="flex items-center gap-3">
 <span className="text-sm font-medium text-gray-700">{userEmail}</span>
