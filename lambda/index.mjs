@@ -12,6 +12,8 @@ import {
   CognitoIdentityProviderClient,
   AdminCreateUserCommand,
   AdminAddUserToGroupCommand,
+  AdminRemoveUserFromGroupCommand,
+  AdminListGroupsForUserCommand,
   AdminDeleteUserCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
 import { randomUUID } from 'crypto';
@@ -537,6 +539,120 @@ export async function handler(event) {
       }
     }
 
+
+
+    // ── Employees (DynamoDB optutor-employees) ──────────────────────────────
+    if (resource === 'employees') {
+      const ctx = await getCallerContext(event);
+      if (!ctx.email) return unauthorized();
+      if (!ctx.permissions.has('manage_roles')) return forbidden();
+
+      await ensureTable(TABLES.employees, 'userId');
+
+      if (method === 'GET' && !id) {
+        return ok(await scanAll(TABLES.employees));
+      }
+
+      if (method === 'POST' && !id) {
+        const { email, fullName, phone, role, department, hireDate, status } = body;
+        if (!email || !fullName) return badRequest('email and fullName are required');
+        if (!role) return badRequest('role is required');
+        const userId = randomUUID();
+        const now = new Date().toISOString();
+        const item = {
+          userId,
+          email,
+          fullName,
+          phone: phone || '',
+          role,
+          department: department || '',
+          hireDate: hireDate || '',
+          status: status || 'active',
+          createdAt: now,
+        };
+        await ddb.send(new PutCommand({ TableName: TABLES.employees, Item: item }));
+        // Create Cognito user + add to group (best-effort)
+        try {
+          await cognito.send(new AdminCreateUserCommand({
+            UserPoolId: USER_POOL_ID,
+            Username: email,
+            UserAttributes: [
+              { Name: 'email', Value: email },
+              { Name: 'email_verified', Value: 'true' },
+              { Name: 'name', Value: fullName },
+            ],
+            MessageAction: 'SUPPRESS',
+          }));
+          await cognito.send(new AdminAddUserToGroupCommand({
+            UserPoolId: USER_POOL_ID,
+            Username: email,
+            GroupName: role,
+          }));
+        } catch (cognitoErr) {
+          console.error('Cognito create employee error (non-fatal):', cognitoErr.message);
+        }
+        return created(item);
+      }
+
+      if (method === 'PUT' && id) {
+        const existing = await ddb.send(new GetCommand({ TableName: TABLES.employees, Key: { userId: id } }));
+        if (!existing.Item) return notFound('Employee not found');
+        const { fullName, phone, department, role, status } = body;
+        const now = new Date().toISOString();
+        const prevRole = existing.Item.role;
+        const updated = {
+          ...existing.Item,
+          ...(fullName !== undefined ? { fullName } : {}),
+          ...(phone !== undefined ? { phone } : {}),
+          ...(department !== undefined ? { department } : {}),
+          ...(role ? { role } : {}),
+          ...(status !== undefined ? { status } : {}),
+          updatedAt: now,
+          updatedBy: ctx.email,
+        };
+        await ddb.send(new PutCommand({ TableName: TABLES.employees, Item: updated }));
+        // Update Cognito group if role changed (best-effort)
+        if (role && role !== prevRole) {
+          try {
+            const groupsRes = await cognito.send(new AdminListGroupsForUserCommand({
+              UserPoolId: USER_POOL_ID,
+              Username: existing.Item.email,
+            }));
+            await Promise.all((groupsRes.Groups || []).map(g =>
+              cognito.send(new AdminRemoveUserFromGroupCommand({
+                UserPoolId: USER_POOL_ID,
+                Username: existing.Item.email,
+                GroupName: g.GroupName,
+              }))
+            ));
+            await cognito.send(new AdminAddUserToGroupCommand({
+              UserPoolId: USER_POOL_ID,
+              Username: existing.Item.email,
+              GroupName: role,
+            }));
+          } catch (cognitoErr) {
+            console.error('Cognito group update error (non-fatal):', cognitoErr.message);
+          }
+        }
+        return ok(updated);
+      }
+
+      if (method === 'DELETE' && id) {
+        const existing = await ddb.send(new GetCommand({ TableName: TABLES.employees, Key: { userId: id } }));
+        if (!existing.Item) return notFound('Employee not found');
+        await ddb.send(new DeleteCommand({ TableName: TABLES.employees, Key: { userId: id } }));
+        // Remove from Cognito (best-effort)
+        try {
+          await cognito.send(new AdminDeleteUserCommand({
+            UserPoolId: USER_POOL_ID,
+            Username: existing.Item.email,
+          }));
+        } catch (cognitoErr) {
+          console.error('Cognito delete employee error (non-fatal):', cognitoErr.message);
+        }
+        return ok({ deleted: true, userId: id });
+      }
+    }
 
       // ── GET /admin/users – list ALL Cognito users with groups ────────────
       if (method === 'GET' && path === '/admin/users') {
