@@ -79,7 +79,13 @@ jobs:
           EOF
           aws iam put-role-policy --role-name "$LAMBDA_ROLE_NAME" --policy-name OpTutorS3Profiles --policy-document file:///tmp/s3-policy.json
 
-          cat > /tmp/ddb-create-policy.json << EOF
+          
+        cat > /tmp/cognito-policy.json << EOF
+{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["cognito-idp:AdminCreateUser","cognito-idp:AdminAddUserToGroup","cognito-idp:AdminDeleteUser","cognito-idp:ListUsersInGroup"],"Resource":"arn:aws:cognito-idp:${AWS_REGION}:${ACCOUNT_ID}:userpool/*"}]}
+EOF
+        aws iam put-role-policy --role-name "$LAMBDA_ROLE_NAME" --policy-name OpTutorCognito --policy-document file:///tmp/cognito-policy.json
+
+        cat > /tmp/ddb-create-policy.json << EOF
           {"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["dynamodb:CreateTable","dynamodb:DescribeTable","dynamodb:UpdateItem"],"Resource":["arn:aws:dynamodb:${AWS_REGION}:${ACCOUNT_ID}:table/optutor-*","arn:aws:dynamodb:${AWS_REGION}:${ACCOUNT_ID}:table/OpTutor-*"]}]}
           EOF
           aws iam put-role-policy --role-name "$LAMBDA_ROLE_NAME" --policy-name OpTutorDdbCreate --policy-document file:///tmp/ddb-create-policy.json
