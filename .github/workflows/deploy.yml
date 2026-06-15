@@ -28,7 +28,7 @@ jobs:
           NEXT_PUBLIC_COGNITO_USER_POOL_ID: ${{ secrets.NEXT_PUBLIC_COGNITO_USER_POOL_ID }}
           NEXT_PUBLIC_COGNITO_CLIENT_ID:    ${{ secrets.NEXT_PUBLIC_COGNITO_CLIENT_ID }}
           NEXT_PUBLIC_API_URL:              ${{ secrets.NEXT_PUBLIC_API_URL }}
-          NEXT_PUBLIC_APP_URL:              https://tutor.oppertunitypool.com
+          NEXT_PUBLIC_APP_URL:              https://optutor.com
           NEXT_PUBLIC_APP_NAME:             OpTutor
 
       - name: Configure AWS credentials
@@ -40,13 +40,13 @@ jobs:
 
       - name: Deploy to S3
         run: |
-          aws s3 sync out/ s3://tutor-oppertunitypool-com \
+          aws s3 sync out/ s3://optutor-com \
             --region us-east-2 \
             --delete \
             --cache-control "public, max-age=31536000, immutable" \
             --exclude "*.html" \
             --exclude "*.txt"
-          aws s3 sync out/ s3://tutor-oppertunitypool-com \
+          aws s3 sync out/ s3://optutor-com \
             --region us-east-2 \
             --delete \
             --cache-control "no-cache, no-store, must-revalidate" \
@@ -63,4 +63,4 @@ jobs:
             --paths "/*"
 
       - name: Confirm deployment
-        run: echo "Deployed to s3://tutor-oppertunitypool-com"
+        run: echo "Deployed to s3://optutor-com"
