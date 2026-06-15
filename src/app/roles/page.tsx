@@ -52,6 +52,8 @@ export default function RolesPage() {
   const [employees, setEmployees]  = useState<Employee[]>([])
   const [empForm, setEmpForm]      = useState({ fullName: '', email: '', phone: '', role: 'TEACHER' as 'ADMIN' | 'TEACHER', department: '' })
   const [empSaving, setEmpSaving]  = useState(false)
+  const [newRole, setNewRole]      = useState<{ name: string; description: string; permissions: string[] }>({ name: '', description: '', permissions: [] })
+  const [roleSaving, setRoleSaving] = useState(false)
 
   const apiFetch = useCallback(async (path: string, opts: RequestInit = {}) => {
     const token = await getIdToken()
