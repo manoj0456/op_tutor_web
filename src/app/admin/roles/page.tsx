@@ -255,6 +255,126 @@ function AddStudentModal({ onClose, onSubmit }: AddStudentModalProps) {
   )
 }
 
+
+// ── Reset Password Modal ──────────────────────────────────────────────────────
+function generateTempPassword(): string {
+  const upper   = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
+  const lower   = 'abcdefghjkmnpqrstuvwxyz'
+  const digits  = '23456789'
+  const symbols = '!@#$%^&*'
+  const all     = upper + lower + digits + symbols
+  // Guarantee at least one of each required class
+  const pick = (s: string) => s[Math.floor(Math.random() * s.length)]
+  const base = [pick(upper), pick(lower), pick(digits), pick(symbols)]
+  for (let i = 0; i < 6; i++) base.push(pick(all))
+  // Fisher-Yates shuffle
+  for (let i = base.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [base[i], base[j]] = [base[j], base[i]]
+  }
+  return base.join('')
+}
+
+interface ResetPasswordModalProps {
+  userName: string
+  onClose: () => void
+  onConfirm: (temporaryPassword: string) => Promise<void>
+}
+
+function ResetPasswordModal({ userName, onClose, onConfirm }: ResetPasswordModalProps) {
+  const [password, setPassword]   = useState(() => generateTempPassword())
+  const [copied, setCopied]       = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError]         = useState<string | null>(null)
+
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(password).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  const handleConfirm = async () => {
+    if (!password.trim()) { setError('Password cannot be empty'); return }
+    setSubmitting(true)
+    setError(null)
+    try {
+      await onConfirm(password.trim())
+      onClose()
+    } catch (err: any) {
+      setError(err.message ?? 'Failed to reset password')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-sm p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">Reset Password</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none" aria-label="Close">
+            &times;
+          </button>
+        </div>
+
+        <p className="text-sm text-gray-600 mb-4">
+          Set a temporary password for <span className="font-medium text-gray-800">{userName}</span>.
+          They will be required to change it on first login.
+        </p>
+
+        {error && (
+          <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{error}</div>
+        )}
+
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Temporary Password</label>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+            <button
+              type="button"
+              onClick={copyToClipboard}
+              className="px-3 py-2 text-xs border border-gray-300 rounded hover:bg-gray-50 text-gray-600 whitespace-nowrap"
+            >
+              {copied ? '✓ Copied' : 'Copy'}
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={() => setPassword(generateTempPassword())}
+            className="mt-1 text-xs text-primary-600 hover:underline"
+          >
+            Regenerate
+          </button>
+        </div>
+
+        <div className="flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={submitting}
+            className="px-4 py-2 text-sm font-medium text-white bg-amber-600 rounded hover:bg-amber-700 disabled:opacity-50"
+          >
+            {submitting ? 'Resetting...' : 'Confirm Reset'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function AdminRolesPage() {
   const { getIdToken } = useAuth()
@@ -274,6 +394,7 @@ export default function AdminRolesPage() {
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
   const [showAddEmployee, setShowAddEmployee] = useState(false)
   const [showAddStudent, setShowAddStudent]   = useState(false)
+  const [resetTarget, setResetTarget] = useState<{ userId: string; name: string } | null>(null)
 
   // Only ADMIN and SUPER_ADMIN can access this page
   useEffect(() => {
@@ -359,6 +480,17 @@ export default function AdminRolesPage() {
     fetchUsers()
   }
 
+  const handleResetPassword = async (temporaryPassword: string) => {
+    if (!resetTarget) return
+    const token = await getIdToken()
+    await apiFetch(`/admin/users/${encodeURIComponent(resetTarget.userId)}/reset-password`, token, {
+      method: 'POST',
+      body: JSON.stringify({ temporaryPassword }),
+    })
+    setSuccessMsg('Temporary password set. Share it with the user.')
+    setTimeout(() => setSuccessMsg(null), 4000)
+  }
+
   if (!loaded) return <div className="p-8 text-center text-gray-500">Loading...</div>
   if (!canManageEmployees) return null
 
@@ -383,6 +515,13 @@ export default function AdminRolesPage() {
         <AddStudentModal
           onClose={() => setShowAddStudent(false)}
           onSubmit={handleAddStudent}
+        />
+      )}
+      {resetTarget && (
+        <ResetPasswordModal
+          userName={resetTarget.name}
+          onClose={() => setResetTarget(null)}
+          onConfirm={handleResetPassword}
         />
       )}
 
@@ -456,12 +595,13 @@ export default function AdminRolesPage() {
                       <th className="text-left p-3 font-medium text-gray-600">Enrolled Courses</th>
                       <th className="text-left p-3 font-medium text-gray-600">Joined Date</th>
                       <th className="text-left p-3 font-medium text-gray-600">Last Active</th>
+                      {isSuperAdmin && <th className="text-left p-3 font-medium text-gray-600">Actions</th>}
                     </tr>
                   </thead>
                   <tbody>
                     {students.length === 0 && (
                       <tr>
-                        <td colSpan={5} className="p-4 text-center text-gray-400">No students found.</td>
+                        <td colSpan={isSuperAdmin ? 6 : 5} className="p-4 text-center text-gray-400">No students found.</td>
                       </tr>
                     )}
                     {students.map(u => (
@@ -477,6 +617,17 @@ export default function AdminRolesPage() {
                         <td className="p-3 text-gray-500 text-xs">
                           {u.lastActive ? new Date(u.lastActive).toLocaleDateString() : '—'}
                         </td>
+                        {isSuperAdmin && (
+                          <td className="p-3">
+                            <button
+                              onClick={() => setResetTarget({ userId: u.userId, name: u.name })}
+                              title="Reset password"
+                              className="text-amber-600 hover:text-amber-800 text-xs font-medium px-2 py-1 border border-amber-300 rounded hover:bg-amber-50 transition"
+                            >
+                              🔑 Reset
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
@@ -515,12 +666,13 @@ export default function AdminRolesPage() {
                       <th className="text-left p-3 font-medium text-gray-600">Email</th>
                       <th className="text-left p-3 font-medium text-gray-600">Current Role</th>
                       <th className="text-left p-3 font-medium text-gray-600">Assign Role</th>
+                      {isSuperAdmin && <th className="text-left p-3 font-medium text-gray-600">Actions</th>}
                     </tr>
                   </thead>
                   <tbody>
                     {employees.length === 0 && (
                       <tr>
-                        <td colSpan={4} className="p-4 text-center text-gray-400">No employees found.</td>
+                        <td colSpan={isSuperAdmin ? 5 : 4} className="p-4 text-center text-gray-400">No employees found.</td>
                       </tr>
                     )}
                     {employees.map(u => {
@@ -564,6 +716,17 @@ export default function AdminRolesPage() {
                               <span className="text-gray-600 text-sm">{currentGroup || '—'}</span>
                             )}
                           </td>
+                          {isSuperAdmin && (
+                            <td className="p-3">
+                              <button
+                                onClick={() => setResetTarget({ userId: u.userId, name: u.name })}
+                                title="Reset password"
+                                className="text-amber-600 hover:text-amber-800 text-xs font-medium px-2 py-1 border border-amber-300 rounded hover:bg-amber-50 transition"
+                              >
+                                🔑 Reset
+                              </button>
+                            </td>
+                          )}
                         </tr>
                       )
                     })}
