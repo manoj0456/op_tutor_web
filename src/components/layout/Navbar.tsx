@@ -28,7 +28,6 @@ return (
 <Link href="/content-management" className="text-sm text-gray-600 hover:text-primary-600 transition">Content Management</Link>
 )}
 {loaded && hasPermission('manage_users') && (
-<Link href="/admin/users" className="text-sm text-gray-600 hover:text-primary-600 transition">Users</Link>
 )}
 {user ? (
 <div className="flex items-center gap-3">
