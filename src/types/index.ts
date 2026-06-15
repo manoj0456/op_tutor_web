@@ -27,6 +27,7 @@ export interface Course {
   difficultyLevel: DifficultyLevel
   instructorName: string
   status: CourseStatus
+  isPaid: boolean
   videos: CourseVideo[]
   createdBy: string
   createdAt: string
@@ -46,6 +47,7 @@ export interface LiveSession {
   duration: number
   timezone: string
   status: SessionStatus
+  isPaid: boolean
   providerType: VideoProvider
   providerVideoId: string
   embedUrl: string
