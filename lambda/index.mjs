@@ -1,4 +1,4 @@
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBClient, CreateTableCommand, DescribeTableCommand } from '@aws-sdk/client-dynamodb';
 import {
   DynamoDBDocumentClient,
   ScanCommand,
@@ -6,10 +6,19 @@ import {
   GetCommand,
   DeleteCommand,
 } from '@aws-sdk/lib-dynamodb';
+import {
+  CognitoIdentityProviderClient,
+  AdminCreateUserCommand,
+  AdminAddUserToGroupCommand,
+  AdminDeleteUserCommand,
+} from '@aws-sdk/client-cognito-identity-provider';
 import { randomUUID } from 'crypto';
 
-const client = new DynamoDBClient({ region: process.env.AWS_REGION || 'us-east-2' });
+const REGION = process.env.AWS_REGION || 'us-east-2';
+const client = new DynamoDBClient({ region: REGION });
 const ddb = DynamoDBDocumentClient.from(client);
+const cognito = new CognitoIdentityProviderClient({ region: REGION });
+const USER_POOL_ID = process.env.COGNITO_USER_POOL_ID || '';
 
 const TABLES = {
   roles: 'OpTutor-Roles',
@@ -17,7 +26,41 @@ const TABLES = {
   roleRequests: 'OpTutor-RoleRequests',
   courses: 'OpTutor-Courses',
   liveSessions: 'OpTutor-LiveSessions',
+  students: 'optutor-students',
+  employees: 'optutor-employees',
 };
+
+const ensuredTables = new Set();
+
+async function ensureTable(tableName, pk) {
+  if (ensuredTables.has(tableName)) return;
+  try {
+    await client.send(new DescribeTableCommand({ TableName: tableName }));
+    ensuredTables.add(tableName);
+    return;
+  } catch (err) {
+    if (err.name !== 'ResourceNotFoundException') throw err;
+  }
+  try {
+    await client.send(new CreateTableCommand({
+      TableName: tableName,
+      AttributeDefinitions: [{ AttributeName: pk, AttributeType: 'S' }],
+      KeySchema: [{ AttributeName: pk, KeyType: 'HASH' }],
+      BillingMode: 'PAY_PER_REQUEST',
+    }));
+    for (let i = 0; i < 20; i++) {
+      try {
+        const d = await client.send(new DescribeTableCommand({ TableName: tableName }));
+        if (d.Table?.TableStatus === 'ACTIVE') break;
+      } catch { /* not ready */ }
+      await new Promise(r => setTimeout(r, 1000));
+    }
+    ensuredTables.add(tableName);
+  } catch (err) {
+    if (err.name === 'ResourceInUseException') { ensuredTables.add(tableName); return; }
+    throw err;
+  }
+}
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -377,6 +420,96 @@ export async function handler(event) {
       if (method === 'DELETE' && id) {
         await ddb.send(new DeleteCommand({ TableName: TABLES.liveSessions, Key: { sessionId: id } }));
         return ok({ deleted: true, sessionId: id });
+      }
+    }
+
+
+    // ── Employees (Admin/Teacher created from Roles page) ──────
+    if (resource === 'employees') {
+      const ctx = await getCallerContext(event);
+      if (!ctx.email) return unauthorized();
+      if (!ctx.permissions.has('manage_users') && !ctx.permissions.has('manage_roles')) return forbidden();
+      await ensureTable(TABLES.employees, 'userId');
+
+      if (method === 'GET' && !id) {
+        return ok(await scanAll(TABLES.employees));
+      }
+
+      if (method === 'POST' && !id) {
+        const { email, fullName, phone, role, department } = body;
+        if (!email) return badRequest('email is required');
+        if (!fullName) return badRequest('fullName is required');
+        if (!['ADMIN', 'TEACHER'].includes(role)) return badRequest('role must be ADMIN or TEACHER');
+        if (!USER_POOL_ID) return serverErr('COGNITO_USER_POOL_ID not configured on Lambda');
+
+        let userSub = '';
+        try {
+          const createRes = await cognito.send(new AdminCreateUserCommand({
+            UserPoolId: USER_POOL_ID,
+            Username: email,
+            UserAttributes: [
+              { Name: 'email', Value: email },
+              { Name: 'email_verified', Value: 'true' },
+              { Name: 'name', Value: fullName },
+              ...(phone ? [{ Name: 'phone_number', Value: phone.replace(/[^\d+]/g, '') }] : []),
+            ],
+            DesiredDeliveryMediums: ['EMAIL'],
+          }));
+          userSub = (createRes.User?.Attributes || []).find(a => a.Name === 'sub')?.Value || email;
+        } catch (err) {
+          if (err.name === 'UsernameExistsException') return badRequest('A user with this email already exists');
+          console.error('AdminCreateUser failed:', err);
+          return serverErr('Failed to create Cognito user: ' + err.message);
+        }
+
+        try {
+          await cognito.send(new AdminAddUserToGroupCommand({
+            UserPoolId: USER_POOL_ID, Username: email, GroupName: role,
+          }));
+        } catch (err) {
+          console.error('AdminAddUserToGroup failed (continuing):', err);
+        }
+
+        // Map Cognito group -> DynamoDB role for app permissions
+        const roleId = role === 'ADMIN' ? 'ADMIN' : 'TEACHER';
+        const roleName = role === 'ADMIN' ? 'Admin' : 'Teacher';
+        try {
+          await ddb.send(new PutCommand({
+            TableName: TABLES.userRoles,
+            Item: { userEmail: email, roleId, roleName, name: fullName, assignedBy: ctx.email, assignedAt: new Date().toISOString() },
+          }));
+        } catch (err) { console.error('userRoles put failed:', err); }
+
+        const now = new Date().toISOString();
+        const item = {
+          userId: userSub,
+          email,
+          fullName,
+          phone: phone || '',
+          role,
+          department: department || '',
+          createdAt: now,
+          createdBy: ctx.email,
+          lastActiveAt: now,
+          totalTimeSpentSeconds: 0,
+        };
+        await ddb.send(new PutCommand({ TableName: TABLES.employees, Item: item }));
+        return created(item);
+      }
+
+      if (method === 'DELETE' && id) {
+        const existing = await ddb.send(new GetCommand({ TableName: TABLES.employees, Key: { userId: id } }));
+        const empEmail = existing.Item?.email;
+        if (empEmail && USER_POOL_ID) {
+          try {
+            await cognito.send(new AdminDeleteUserCommand({ UserPoolId: USER_POOL_ID, Username: empEmail }));
+          } catch (err) { console.error('AdminDeleteUser failed (continuing):', err); }
+          try {
+            await ddb.send(new DeleteCommand({ TableName: TABLES.userRoles, Key: { userEmail: empEmail } }));
+          } catch (err) { console.error('userRoles delete failed:', err); }
+        }
+        await ddb.send(new DeleteCommand({ TableName: TABLES.employees, Key: { userId: id } }));
+        return ok({ deleted: true, userId: id });
       }
     }
 
