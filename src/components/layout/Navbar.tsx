@@ -16,8 +16,8 @@ router.push('/login')
 
 return (
 <nav className="border-b bg-white sticky top-0 z-50">
-<div className="container mx-auto px-4 h-24 flex items-center justify-between">
-<Link href="/"><img src="/logos/logo-brand.png" alt="OpTutor" className="h-20 w-auto" /></Link>
+<div className="container mx-auto px-4 h-28 flex items-center justify-between">
+<Link href="/"><img src="/logos/logo-brand.png" alt="OpTutor" className="h-28 w-auto" /></Link>
 <div className="flex items-center gap-6">
 <Link href="/courses" className="text-sm text-gray-600 hover:text-primary-600 transition">Courses</Link>
 <Link href="/live" className="text-sm text-gray-600 hover:text-primary-600 transition">Live</Link>
