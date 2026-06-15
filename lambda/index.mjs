@@ -1,15 +1,29 @@
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBClient, CreateTableCommand, DescribeTableCommand } from '@aws-sdk/client-dynamodb';
 import {
   DynamoDBDocumentClient,
   ScanCommand,
   PutCommand,
   GetCommand,
   DeleteCommand,
+  UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import {
+  CognitoIdentityProviderClient,
+  AdminCreateUserCommand,
+  AdminAddUserToGroupCommand,
+  AdminDeleteUserCommand,
+} from '@aws-sdk/client-cognito-identity-provider';
 import { randomUUID } from 'crypto';
 
-const client = new DynamoDBClient({ region: process.env.AWS_REGION || 'us-east-2' });
+const REGION = process.env.AWS_REGION || 'us-east-2';
+const client = new DynamoDBClient({ region: REGION });
 const ddb = DynamoDBDocumentClient.from(client);
+const s3 = new S3Client({ region: REGION });
+const cognito = new CognitoIdentityProviderClient({ region: REGION });
+
+const S3_BUCKET = process.env.PROFILE_BUCKET || 'optutor-com';
+const USER_POOL_ID = process.env.COGNITO_USER_POOL_ID || '';
 
 const TABLES = {
   roles: 'OpTutor-Roles',
@@ -17,7 +31,66 @@ const TABLES = {
   roleRequests: 'OpTutor-RoleRequests',
   courses: 'OpTutor-Courses',
   liveSessions: 'OpTutor-LiveSessions',
+  students: 'optutor-students',
+  employees: 'optutor-employees',
 };
+
+// Cache of tables we've ensured exist this container lifetime
+const ensuredTables = new Set();
+
+// Create a PAY_PER_REQUEST table on first use if it doesn't exist
+async function ensureTable(tableName, pk) {
+  if (ensuredTables.has(tableName)) return;
+  try {
+    await client.send(new DescribeTableCommand({ TableName: tableName }));
+    ensuredTables.add(tableName);
+    return;
+  } catch (err) {
+    if (err.name !== 'ResourceNotFoundException') throw err;
+  }
+  try {
+    await client.send(new CreateTableCommand({
+      TableName: tableName,
+      AttributeDefinitions: [{ AttributeName: pk, AttributeType: 'S' }],
+      KeySchema: [{ AttributeName: pk, KeyType: 'HASH' }],
+      BillingMode: 'PAY_PER_REQUEST',
+    }));
+    // Best-effort wait for ACTIVE
+    for (let i = 0; i < 20; i++) {
+      try {
+        const d = await client.send(new DescribeTableCommand({ TableName: tableName }));
+        if (d.Table?.TableStatus === 'ACTIVE') break;
+      } catch { /* not ready */ }
+      await new Promise(r => setTimeout(r, 1000));
+    }
+    ensuredTables.add(tableName);
+  } catch (err) {
+    if (err.name === 'ResourceInUseException') { ensuredTables.add(tableName); return; }
+    throw err;
+  }
+}
+
+// Upload a base64 data URL to S3, returns the public URL (or '' on failure)
+async function uploadProfilePicture(userId, dataUrl) {
+  if (!dataUrl || !dataUrl.startsWith('data:')) return '';
+  const m = dataUrl.match(/^data:([^;]+);base64,(.*)$/);
+  if (!m) return '';
+  const contentType = m[1] || 'image/jpeg';
+  const buffer = Buffer.from(m[2], 'base64');
+  const key = `profile-pictures/${userId}.jpg`;
+  try {
+    await s3.send(new PutObjectCommand({
+      Bucket: S3_BUCKET,
+      Key: key,
+      Body: buffer,
+      ContentType: contentType,
+    }));
+    return `https://${S3_BUCKET}.s3.${REGION}.amazonaws.com/${key}`;
+  } catch (err) {
+    console.error('S3 upload failed:', err);
+    return '';
+  }
+}
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -377,6 +450,58 @@ export async function handler(event) {
       if (method === 'DELETE' && id) {
         await ddb.send(new DeleteCommand({ TableName: TABLES.liveSessions, Key: { sessionId: id } }));
         return ok({ deleted: true, sessionId: id });
+      }
+    }
+
+
+    // ── Students (self-service signup profiles) ────────────────
+    if (resource === 'students') {
+      // Public self-registration: store profile after Cognito verification
+      if (method === 'POST' && !id) {
+        await ensureTable(TABLES.students, 'userId');
+        const { userId, email, fullName, phone, dateOfBirth, profilePictureDataUrl,
+                paymentMethodAdded, cardLastFour, cardHolderName, cardExpiry } = body;
+        if (!userId || !email) return badRequest('userId and email are required');
+        const now = new Date().toISOString();
+        let profilePictureUrl = '';
+        if (profilePictureDataUrl) {
+          profilePictureUrl = await uploadProfilePicture(userId, profilePictureDataUrl);
+        }
+        const item = {
+          userId,
+          email,
+          fullName: fullName || '',
+          phone: phone || '',
+          dateOfBirth: dateOfBirth || '',
+          profilePictureUrl,
+          paymentMethodAdded: !!paymentMethodAdded,
+          cardLastFour: (cardLastFour || '').slice(-4),
+          cardHolderName: cardHolderName || '',
+          cardExpiry: cardExpiry || '',
+          enrolledCourses: [],
+          totalTimeSpentSeconds: 0,
+          createdAt: now,
+          lastActiveAt: now,
+        };
+        await ddb.send(new PutCommand({ TableName: TABLES.students, Item: item }));
+        return created(item);
+      }
+
+      // Authenticated reads
+      const ctx = await getCallerContext(event);
+      if (!ctx.email) return unauthorized();
+
+      if (method === 'GET' && !id) {
+        if (!ctx.permissions.has('manage_users')) return forbidden();
+        await ensureTable(TABLES.students, 'userId');
+        return ok(await scanAll(TABLES.students));
+      }
+
+      if (method === 'GET' && id) {
+        await ensureTable(TABLES.students, 'userId');
+        const res = await ddb.send(new GetCommand({ TableName: TABLES.students, Key: { userId: id } }));
+        if (!res.Item) return notFound('Student not found');
+        return ok(res.Item);
       }
     }
 
