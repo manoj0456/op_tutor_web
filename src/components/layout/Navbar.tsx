@@ -19,12 +19,8 @@ export function Navbar() {
       <div className="container mx-auto px-4 h-16 flex items-center justify-between">
         <Link href="/" className="font-bold text-xl text-primary-600">OpTutor</Link>
         <div className="flex items-center gap-6">
-          {user && (
-            <>
-              <Link href="/courses" className="text-sm text-gray-600 hover:text-primary-600 transition">Courses</Link>
-              <Link href="/live" className="text-sm text-gray-600 hover:text-primary-600 transition">Live</Link>
-            </>
-          )}
+          <Link href="/courses" className="text-sm text-gray-600 hover:text-primary-600 transition">Courses</Link>
+          <Link href="/live" className="text-sm text-gray-600 hover:text-primary-600 transition">Live</Link>
           {loaded && isSuperAdmin && (
             <Link href="/roles" className="text-sm text-gray-600 hover:text-primary-600 transition">Roles</Link>
           )}

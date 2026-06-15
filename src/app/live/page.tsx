@@ -281,7 +281,7 @@ function Section({ title, sessions, onSelect, emptyMsg }: {
 
 // ── Main page ─────────────────────────────────────────────────
 export default function LivePage() {
-  const { user, getIdToken } = useAuth()
+  const { getIdToken } = useAuth()
   const { loaded } = usePermissions()
 
   const [sessions, setSessions] = useState<LiveSession[]>([])
@@ -291,11 +291,8 @@ export default function LivePage() {
   const loadSessions = useCallback(async () => {
     setLoading(true)
     try {
-      const headers: Record<string, string> = {}
-      if (user) {
-        const token = await getIdToken()
-        headers['Authorization'] = `Bearer ${token}`
-      }
+      const token = await getIdToken().catch(() => null)
+      const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {}
       const res = await fetch(`${API_URL}/live-sessions`, { headers })
       if (res.ok) {
         const data = await res.json()
@@ -303,7 +300,7 @@ export default function LivePage() {
       }
     } catch { /* silent */ }
     finally { setLoading(false) }
-  }, [user, getIdToken])
+  }, [getIdToken])
 
   useEffect(() => { if (loaded) loadSessions() }, [loaded, loadSessions])
 

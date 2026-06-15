@@ -216,7 +216,7 @@ function CourseDetail({ course, onBack }: { course: Course; onBack: () => void }
 
 // ── Main page ─────────────────────────────────────────────────
 export default function CoursesPage() {
-  const { user, getIdToken } = useAuth()
+  const { getIdToken } = useAuth()
   const { loaded } = usePermissions()
 
   const [courses, setCourses] = useState<Course[]>([])
@@ -228,11 +228,8 @@ export default function CoursesPage() {
   const loadCourses = useCallback(async () => {
     setLoading(true)
     try {
-      const headers: Record<string, string> = {}
-      if (user) {
-        const token = await getIdToken()
-        headers['Authorization'] = `Bearer ${token}`
-      }
+      const token = await getIdToken().catch(() => null)
+      const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {}
       const res = await fetch(`${API_URL}/courses`, { headers })
       if (res.ok) {
         const data = await res.json()
@@ -243,7 +240,7 @@ export default function CoursesPage() {
     } finally {
       setLoading(false)
     }
-  }, [user, getIdToken])
+  }, [getIdToken])
 
   useEffect(() => { if (loaded) loadCourses() }, [loaded, loadCourses])
 
