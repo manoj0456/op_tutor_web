@@ -5,7 +5,9 @@ import {
   PutCommand,
   GetCommand,
   DeleteCommand,
+  UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import {
   CognitoIdentityProviderClient,
   AdminCreateUserCommand,
@@ -17,7 +19,10 @@ import { randomUUID } from 'crypto';
 const REGION = process.env.AWS_REGION || 'us-east-2';
 const client = new DynamoDBClient({ region: REGION });
 const ddb = DynamoDBDocumentClient.from(client);
+const s3 = new S3Client({ region: REGION });
 const cognito = new CognitoIdentityProviderClient({ region: REGION });
+
+const S3_BUCKET = process.env.PROFILE_BUCKET || 'optutor-com';
 const USER_POOL_ID = process.env.COGNITO_USER_POOL_ID || '';
 
 const TABLES = {
@@ -30,8 +35,10 @@ const TABLES = {
   employees: 'optutor-employees',
 };
 
+// Cache of tables we've ensured exist this container lifetime
 const ensuredTables = new Set();
 
+// Create a PAY_PER_REQUEST table on first use if it doesn't exist
 async function ensureTable(tableName, pk) {
   if (ensuredTables.has(tableName)) return;
   try {
@@ -48,6 +55,7 @@ async function ensureTable(tableName, pk) {
       KeySchema: [{ AttributeName: pk, KeyType: 'HASH' }],
       BillingMode: 'PAY_PER_REQUEST',
     }));
+    // Best-effort wait for ACTIVE
     for (let i = 0; i < 20; i++) {
       try {
         const d = await client.send(new DescribeTableCommand({ TableName: tableName }));
@@ -59,6 +67,28 @@ async function ensureTable(tableName, pk) {
   } catch (err) {
     if (err.name === 'ResourceInUseException') { ensuredTables.add(tableName); return; }
     throw err;
+  }
+}
+
+// Upload a base64 data URL to S3, returns the public URL (or '' on failure)
+async function uploadProfilePicture(userId, dataUrl) {
+  if (!dataUrl || !dataUrl.startsWith('data:')) return '';
+  const m = dataUrl.match(/^data:([^;]+);base64,(.*)$/);
+  if (!m) return '';
+  const contentType = m[1] || 'image/jpeg';
+  const buffer = Buffer.from(m[2], 'base64');
+  const key = `profile-pictures/${userId}.jpg`;
+  try {
+    await s3.send(new PutObjectCommand({
+      Bucket: S3_BUCKET,
+      Key: key,
+      Body: buffer,
+      ContentType: contentType,
+    }));
+    return `https://${S3_BUCKET}.s3.${REGION}.amazonaws.com/${key}`;
+  } catch (err) {
+    console.error('S3 upload failed:', err);
+    return '';
   }
 }
 
@@ -112,7 +142,7 @@ function extractEmail(event) {
   } catch { return null; }
 }
 
-// ── YouTube URL parser ─────────────────────────────────────────
+// ââ YouTube URL parser âââââââââââââââââââââââââââââââââââââââââ
 function parseYouTubeUrl(url) {
   if (!url) return null;
   const patterns = [
@@ -128,7 +158,7 @@ function parseYouTubeUrl(url) {
   return null;
 }
 
-// ── Get caller email + permissions ─────────────────────────────
+// ââ Get caller email + permissions âââââââââââââââââââââââââââââ
 async function getCallerContext(event) {
   const email = extractEmail(event);
   if (!email) return { email: null, roleRecord: null, permissions: new Set() };
@@ -147,7 +177,7 @@ async function getCallerContext(event) {
   }
 }
 
-// ── Normalize video object (handles old + new shapes) ─────────
+// ââ Normalize video object (handles old + new shapes) âââââââââ
 function normalizeVideo(v, index) {
   const ytUrl = v.youtubeUrl || '';
   const parsed = parseYouTubeUrl(ytUrl);
@@ -179,7 +209,7 @@ export async function handler(event) {
   const body = parseBody(event);
 
   try {
-    // ── Roles ──────────────────────────────────────────────────
+    // ââ Roles ââââââââââââââââââââââââââââââââââââââââââââââââââ
     if (resource === 'roles') {
       if (method === 'GET' && !id) return ok((await scanAll(TABLES.roles)).map(normalizeRole));
       const ctx = await getCallerContext(event);
@@ -194,7 +224,7 @@ export async function handler(event) {
       }
     }
 
-    // ── Users ──────────────────────────────────────────────────
+    // ââ Users ââââââââââââââââââââââââââââââââââââââââââââââââââ
     if (resource === 'users') {
       const ctx = await getCallerContext(event);
       if (!ctx.email) return unauthorized();
@@ -238,7 +268,7 @@ export async function handler(event) {
       }
     }
 
-    // ── Role Requests ──────────────────────────────────────────
+    // ââ Role Requests ââââââââââââââââââââââââââââââââââââââââââ
     if (resource === 'role-requests') {
       if (method === 'POST') {
         const { email, name, requestedRole } = body;
@@ -257,7 +287,7 @@ export async function handler(event) {
       if (method === 'GET') return ok(await scanAll(TABLES.roleRequests));
     }
 
-    // ── Courses ────────────────────────────────────────────────
+    // ââ Courses ââââââââââââââââââââââââââââââââââââââââââââââââ
     if (resource === 'courses') {
       if (method === 'GET' && !id) {
         const ctx = await getCallerContext(event);
@@ -282,7 +312,7 @@ export async function handler(event) {
       if (!ctx.permissions.has('manage_courses')) return forbidden();
 
       if (method === 'POST') {
-        const { title, thumbnailUrl, shortDescription, description, category, tags, difficultyLevel, instructorName, videos, status } = body;
+        const { title, thumbnailUrl, shortDescription, description, category, tags, difficultyLevel, instructorName, videos, status, isPaid } = body;
         if (!title) return badRequest('title is required');
         if (!videos || !Array.isArray(videos) || videos.length === 0) return badRequest('At least one video is required');
         const now = new Date().toISOString();
@@ -297,6 +327,7 @@ export async function handler(event) {
           tags: Array.isArray(tags) ? tags : [],
           difficultyLevel: difficultyLevel || 'BEGINNER',
           instructorName: instructorName || ctx.email,
+          isPaid: !!isPaid,
           videos: videos.map((v, i) => normalizeVideo(v, i)),
           status: normalizedStatus,
           createdBy: ctx.email,
@@ -323,6 +354,7 @@ export async function handler(event) {
           updatedBy: ctx.email,
           updatedAt: now,
           ...(incomingStatus ? { status: incomingStatus } : {}),
+          ...(typeof body.isPaid !== 'undefined' ? { isPaid: !!body.isPaid } : {}),
           ...(!wasPublished && willPublish ? { publishedAt: now } : {}),
         };
         if (Array.isArray(updated.videos)) {
@@ -341,7 +373,7 @@ export async function handler(event) {
       }
     }
 
-    // ── Live Sessions ──────────────────────────────────────────
+    // ââ Live Sessions ââââââââââââââââââââââââââââââââââââââââââ
     if (resource === 'live-sessions') {
       if (method === 'GET' && !id) {
         const all = await scanAll(TABLES.liveSessions);
@@ -365,7 +397,7 @@ export async function handler(event) {
       if (!ctx.permissions.has('manage_courses')) return forbidden();
 
       if (method === 'POST') {
-        const { title, thumbnailUrl, shortDescription, description, instructorName, youtubeUrl, scheduledAt, duration, timezone, status, providerType, providerVideoId, embedUrl } = body;
+        const { title, thumbnailUrl, shortDescription, description, instructorName, youtubeUrl, scheduledAt, duration, timezone, status, providerType, providerVideoId, embedUrl, isPaid } = body;
         if (!title) return badRequest('title is required');
         if (!youtubeUrl) return badRequest('youtubeUrl is required');
         if (!scheduledAt) return badRequest('scheduledAt is required');
@@ -383,6 +415,7 @@ export async function handler(event) {
           duration: Number(duration) || 60,
           timezone: timezone || 'UTC',
           status: (status || 'UPCOMING').toUpperCase(),
+          isPaid: !!isPaid,
           providerType: providerType || 'YOUTUBE',
           providerVideoId: providerVideoId || parsed?.providerVideoId || '',
           embedUrl: embedUrl || parsed?.embedUrl || '',
@@ -409,6 +442,7 @@ export async function handler(event) {
           updatedBy: ctx.email,
           updatedAt: now,
           ...(body.status ? { status: body.status.toUpperCase() } : {}),
+          ...(typeof body.isPaid !== 'undefined' ? { isPaid: !!body.isPaid } : {}),
           ...(parsed ? { providerVideoId: parsed.providerVideoId, embedUrl: parsed.embedUrl } : {}),
           // keep legacy hostName in sync
           ...(body.instructorName ? { hostName: body.instructorName } : {}),
@@ -424,92 +458,54 @@ export async function handler(event) {
     }
 
 
-    // ── Employees (Admin/Teacher created from Roles page) ──────
-    if (resource === 'employees') {
-      const ctx = await getCallerContext(event);
-      if (!ctx.email) return unauthorized();
-      if (!ctx.permissions.has('manage_users') && !ctx.permissions.has('manage_roles')) return forbidden();
-      await ensureTable(TABLES.employees, 'userId');
-
-      if (method === 'GET' && !id) {
-        return ok(await scanAll(TABLES.employees));
-      }
-
+    // ââ Students (self-service signup profiles) ââââââââââââââââ
+    if (resource === 'students') {
+      // Public self-registration: store profile after Cognito verification
       if (method === 'POST' && !id) {
-        const { email, fullName, phone, role, department } = body;
-        if (!email) return badRequest('email is required');
-        if (!fullName) return badRequest('fullName is required');
-        if (!['ADMIN', 'TEACHER'].includes(role)) return badRequest('role must be ADMIN or TEACHER');
-        if (!USER_POOL_ID) return serverErr('COGNITO_USER_POOL_ID not configured on Lambda');
-
-        let userSub = '';
-        try {
-          const createRes = await cognito.send(new AdminCreateUserCommand({
-            UserPoolId: USER_POOL_ID,
-            Username: email,
-            UserAttributes: [
-              { Name: 'email', Value: email },
-              { Name: 'email_verified', Value: 'true' },
-              { Name: 'name', Value: fullName },
-              ...(phone ? [{ Name: 'phone_number', Value: phone.replace(/[^\d+]/g, '') }] : []),
-            ],
-            DesiredDeliveryMediums: ['EMAIL'],
-          }));
-          userSub = (createRes.User?.Attributes || []).find(a => a.Name === 'sub')?.Value || email;
-        } catch (err) {
-          if (err.name === 'UsernameExistsException') return badRequest('A user with this email already exists');
-          console.error('AdminCreateUser failed:', err);
-          return serverErr('Failed to create Cognito user: ' + err.message);
-        }
-
-        try {
-          await cognito.send(new AdminAddUserToGroupCommand({
-            UserPoolId: USER_POOL_ID, Username: email, GroupName: role,
-          }));
-        } catch (err) {
-          console.error('AdminAddUserToGroup failed (continuing):', err);
-        }
-
-        // Map Cognito group -> DynamoDB role for app permissions
-        const roleId = role === 'ADMIN' ? 'ADMIN' : 'TEACHER';
-        const roleName = role === 'ADMIN' ? 'Admin' : 'Teacher';
-        try {
-          await ddb.send(new PutCommand({
-            TableName: TABLES.userRoles,
-            Item: { userEmail: email, roleId, roleName, name: fullName, assignedBy: ctx.email, assignedAt: new Date().toISOString() },
-          }));
-        } catch (err) { console.error('userRoles put failed:', err); }
-
+        await ensureTable(TABLES.students, 'userId');
+        const { userId, email, fullName, phone, dateOfBirth, profilePictureDataUrl,
+                paymentMethodAdded, cardLastFour, cardHolderName, cardExpiry } = body;
+        if (!userId || !email) return badRequest('userId and email are required');
         const now = new Date().toISOString();
+        let profilePictureUrl = '';
+        if (profilePictureDataUrl) {
+          profilePictureUrl = await uploadProfilePicture(userId, profilePictureDataUrl);
+        }
         const item = {
-          userId: userSub,
+          userId,
           email,
-          fullName,
+          fullName: fullName || '',
           phone: phone || '',
-          role,
-          department: department || '',
-          createdAt: now,
-          createdBy: ctx.email,
-          lastActiveAt: now,
+          dateOfBirth: dateOfBirth || '',
+          profilePictureUrl,
+          paymentMethodAdded: !!paymentMethodAdded,
+          cardLastFour: (cardLastFour || '').slice(-4),
+          cardHolderName: cardHolderName || '',
+          cardExpiry: cardExpiry || '',
+          enrolledCourses: [],
           totalTimeSpentSeconds: 0,
+          createdAt: now,
+          lastActiveAt: now,
         };
-        await ddb.send(new PutCommand({ TableName: TABLES.employees, Item: item }));
+        await ddb.send(new PutCommand({ TableName: TABLES.students, Item: item }));
         return created(item);
       }
 
-      if (method === 'DELETE' && id) {
-        const existing = await ddb.send(new GetCommand({ TableName: TABLES.employees, Key: { userId: id } }));
-        const empEmail = existing.Item?.email;
-        if (empEmail && USER_POOL_ID) {
-          try {
-            await cognito.send(new AdminDeleteUserCommand({ UserPoolId: USER_POOL_ID, Username: empEmail }));
-          } catch (err) { console.error('AdminDeleteUser failed (continuing):', err); }
-          try {
-            await ddb.send(new DeleteCommand({ TableName: TABLES.userRoles, Key: { userEmail: empEmail } }));
-          } catch (err) { console.error('userRoles delete failed:', err); }
-        }
-        await ddb.send(new DeleteCommand({ TableName: TABLES.employees, Key: { userId: id } }));
-        return ok({ deleted: true, userId: id });
+      // Authenticated reads
+      const ctx = await getCallerContext(event);
+      if (!ctx.email) return unauthorized();
+
+      if (method === 'GET' && !id) {
+        if (!ctx.permissions.has('manage_users')) return forbidden();
+        await ensureTable(TABLES.students, 'userId');
+        return ok(await scanAll(TABLES.students));
+      }
+
+      if (method === 'GET' && id) {
+        await ensureTable(TABLES.students, 'userId');
+        const res = await ddb.send(new GetCommand({ TableName: TABLES.students, Key: { userId: id } }));
+        if (!res.Item) return notFound('Student not found');
+        return ok(res.Item);
       }
     }
 
