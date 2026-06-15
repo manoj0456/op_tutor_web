@@ -2,332 +2,780 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '@/context/AuthContext'
 import { usePermissions } from '@/context/PermissionContext'
-import toast from 'react-hot-toast'
+import { useRouter } from 'next/navigation'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? ''
 
-// Page-access -> permission mapping for the role builder
-const PAGE_PERMISSIONS: { label: string; permission: string }[] = [
-  { label: 'Courses', permission: 'view_content' },
-  { label: 'Live Sessions', permission: 'view_content' },
-  { label: 'Content Management', permission: 'manage_courses' },
-  { label: 'Users', permission: 'manage_users' },
-  { label: 'Roles', permission: 'manage_roles' },
-  { label: 'Reports (future)', permission: 'view_reports' },
-]
-const UNIQUE_PAGE_PERMS = Array.from(new Map(PAGE_PERMISSIONS.map(p => [p.permission, p])).values())
+async function apiFetch(path: string, token: string, opts: RequestInit = {}) {
+  const res = await fetch(`${API_URL}${path}`, {
+    ...opts,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+      ...(opts.headers ?? {}),
+    },
+  })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+interface CognitoUser {
+  userId: string
+  email: string
+  name: string
+  groups: string[]
+  createdAt: string
+  enrolledCourses?: number
+  lastActive?: string
+}
 
 interface Role {
   roleId: string
   name: string
-  description?: string
   permissions: string[]
-  isSystem?: boolean
 }
 
-interface UserRecord {
-  email: string
-  name?: string
-  roleId: string
-  roleName: string
+type Tab = 'students' | 'employees' | 'roles'
+
+const EMPLOYEE_GROUPS = ['SUPER_ADMIN', 'ADMIN', 'TEACHER']
+
+// ── Add Employee Modal ────────────────────────────────────────────────────────
+interface AddEmployeeModalProps {
+  onClose: () => void
+  onSubmit: (name: string, email: string, role: string) => Promise<void>
 }
 
-interface Employee {
-  userId: string
-  email: string
-  fullName: string
-  phone?: string
-  role: 'ADMIN' | 'TEACHER'
-  department?: string
-  createdAt?: string
-}
+function AddEmployeeModal({ onClose, onSubmit }: AddEmployeeModalProps) {
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [role, setRole] = useState('ADMIN')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-export default function RolesPage() {
-  const { getIdToken }             = useAuth()
-  const { isSuperAdmin, loaded }   = usePermissions()
-  const [roles, setRoles]          = useState<Role[]>([])
-  const [users, setUsers]          = useState<UserRecord[]>([])
-  const [tab, setTab]              = useState<'roles' | 'users' | 'employees'>('users')
-  const [loading, setLoading]      = useState(true)
-  const [employees, setEmployees]  = useState<Employee[]>([])
-  const [empForm, setEmpForm]      = useState({ fullName: '', email: '', phone: '', role: 'TEACHER' as 'ADMIN' | 'TEACHER', department: '' })
-  const [empSaving, setEmpSaving]  = useState(false)
-  const [newRole, setNewRole]      = useState<{ name: string; description: string; permissions: string[] }>({ name: '', description: '', permissions: [] })
-  const [roleSaving, setRoleSaving] = useState(false)
-
-  const apiFetch = useCallback(async (path: string, opts: RequestInit = {}) => {
-    const token = await getIdToken()
-    const res   = await fetch(`${API_URL}${path}`, {
-      ...opts,
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...(opts.headers ?? {}) },
-    })
-    if (!res.ok) throw new Error(await res.text())
-    return res.json()
-  }, [getIdToken])
-
-  useEffect(() => {
-    if (!loaded || !isSuperAdmin) { setLoading(false); return }
-    Promise.all([
-      apiFetch('/roles').then(setRoles),
-      apiFetch('/users').then(setUsers),
-      apiFetch('/employees').then(setEmployees).catch(() => setEmployees([])),
-    ]).catch(err => toast.error(err.message)).finally(() => setLoading(false))
-  }, [loaded, isSuperAdmin, apiFetch])
-
-  const assignRole = async (email: string, roleId: string) => {
-    try {
-      await apiFetch(`/users/${encodeURIComponent(email)}/role`, {
-        method: 'PUT',
-        body: JSON.stringify({ roleId }),
-      })
-      toast.success('Role updated')
-      const updated = await apiFetch('/users')
-      setUsers(updated)
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to update role')
-    }
-  }
-
-  const addEmployee = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!empForm.fullName.trim() || !empForm.email.trim()) { toast.error('Full name and email are required'); return }
-    setEmpSaving(true)
+    if (!name.trim() || !email.trim()) {
+      setError('Name and email are required')
+      return
+    }
+    setSubmitting(true)
+    setError(null)
     try {
-      const created = await apiFetch('/employees', { method: 'POST', body: JSON.stringify(empForm) })
-      setEmployees(prev => [created, ...prev])
-      setEmpForm({ fullName: '', email: '', phone: '', role: 'TEACHER', department: '' })
-      toast.success('Employee added Ã¢ÂÂ a temporary password was emailed to them')
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to add employee')
+      await onSubmit(name.trim(), email.trim(), role)
+      onClose()
+    } catch (err: any) {
+      setError(err.message ?? 'Failed to create employee')
     } finally {
-      setEmpSaving(false)
+      setSubmitting(false)
     }
-  }
-
-  const removeEmployee = async (userId: string) => {
-    if (!confirm('Remove this employee? Their account will be deleted.')) return
-    try {
-      await apiFetch(`/employees/${encodeURIComponent(userId)}`, { method: 'DELETE' })
-      setEmployees(prev => prev.filter(e => e.userId !== userId))
-      toast.success('Employee removed')
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to remove employee')
-    }
-  }
-
-  const togglePerm = (perm: string) =>
-    setNewRole(r => ({ ...r, permissions: r.permissions.includes(perm) ? r.permissions.filter(p => p !== perm) : [...r.permissions, perm] }))
-
-  const createRole = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!newRole.name.trim()) { toast.error('Role name is required'); return }
-    setRoleSaving(true)
-    try {
-      const created = await apiFetch('/roles', { method: 'POST', body: JSON.stringify({ roleName: newRole.name.trim(), description: newRole.description.trim(), permissions: newRole.permissions }) })
-      setRoles(prev => [...prev, created])
-      setNewRole({ name: '', description: '', permissions: [] })
-      toast.success('Role created')
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to create role')
-    } finally { setRoleSaving(false) }
-  }
-
-  const deleteRole = async (roleId: string) => {
-    if (!confirm('Delete this role?')) return
-    try {
-      await apiFetch(`/roles/${encodeURIComponent(roleId)}`, { method: 'DELETE' })
-      setRoles(prev => prev.filter(r => r.roleId !== roleId))
-      toast.success('Role deleted')
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete role')
-    }
-  }
-
-  if (!loaded) return <div className="flex items-center justify-center min-h-screen">Loading...</div>
-
-  if (!isSuperAdmin) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="text-5xl mb-4">Ã°ÂÂÂ</div>
-          <h1 className="text-2xl font-bold text-gray-800 mb-2">Access Denied</h1>
-          <p className="text-gray-500">Only SUPER_ADMIN users can manage roles.</p>
-        </div>
-      </div>
-    )
   }
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-10">
-      <h1 className="text-3xl font-bold mb-2">Roles &amp; Permissions</h1>
-      <p className="text-gray-500 mb-8">Manage roles and assign them to users.</p>
-
-      <div className="flex gap-2 mb-6">
-        <button onClick={() => setTab('users')} className={`px-5 py-2 rounded-full text-sm font-semibold transition ${tab === 'users' ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
-          Users
-        </button>
-        <button onClick={() => setTab('roles')} className={`px-5 py-2 rounded-full text-sm font-semibold transition ${tab === 'roles' ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
-          Roles
-        </button>
-        <button onClick={() => setTab('employees')} className={`px-5 py-2 rounded-full text-sm font-semibold transition ${tab === 'employees' ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
-          Employees
-        </button>
-      </div>
-
-      {loading ? (
-        <div className="text-center py-16 text-gray-400">Loading...</div>
-      ) : tab === 'users' ? (
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          <table className="w-full">
-            <thead className="bg-gray-50 border-b">
-              <tr>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase px-6 py-3">User</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase px-6 py-3">Current Role</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase px-6 py-3">Assign Role</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {users.map(u => (
-                <tr key={u.email} className="hover:bg-gray-50">
-                  <td className="px-6 py-4">
-                    <div className="font-medium text-gray-900">{u.name || u.email}</div>
-                    <div className="text-xs text-gray-400">{u.email}</div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className="px-3 py-1 bg-primary-50 text-primary-700 rounded-full text-xs font-medium">
-                      {u.roleName || u.roleId}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <select
-                      defaultValue={u.roleId}
-                      onChange={e => assignRole(u.email, e.target.value)}
-                      className="border rounded-lg px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    >
-                      {roles.map(r => (
-                        <option key={r.roleId} value={r.roleId}>{r.name}</option>
-                      ))}
-                    </select>
-                  </td>
-                </tr>
-              ))}
-              {users.length === 0 && (
-                <tr><td colSpan={3} className="px-6 py-10 text-center text-gray-400">No users found.</td></tr>
-              )}
-            </tbody>
-          </table>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">Add Employee</h2>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 text-xl leading-none"
+            aria-label="Close"
+          >
+            &times;
+          </button>
         </div>
-      ) : tab === 'roles' ? (
-        <div className="grid gap-4">
-          <form onSubmit={createRole} className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
-            <h2 className="font-bold text-gray-900 mb-3">Add New Role</h2>
-            <div className="grid sm:grid-cols-2 gap-3 mb-3">
-              <input className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" placeholder="Role name" value={newRole.name} onChange={e => setNewRole(r => ({ ...r, name: e.target.value }))} />
-              <input className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" placeholder="Description" value={newRole.description} onChange={e => setNewRole(r => ({ ...r, description: e.target.value }))} />
-            </div>
-            <p className="text-xs font-medium text-gray-500 mb-2">Page access</p>
-            <div className="flex flex-wrap gap-3 mb-4">
-              {UNIQUE_PAGE_PERMS.map(pp => (
-                <label key={pp.permission} className="flex items-center gap-1.5 text-sm text-gray-700">
-                  <input type="checkbox" checked={newRole.permissions.includes(pp.permission)} onChange={() => togglePerm(pp.permission)} />
-                  {pp.label}
-                </label>
-              ))}
-            </div>
-            <button type="submit" disabled={roleSaving} className="px-5 py-2 bg-primary-600 text-white text-sm font-semibold rounded-lg hover:bg-primary-700 disabled:opacity-60 transition">
-              {roleSaving ? 'Creating...' : 'Create Role'}
+
+        {error && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{error}</div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="Jane Smith"
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+            <input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="jane@example.com"
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+            <select
+              value={role}
+              onChange={e => setRole(e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+            >
+              <option value="ADMIN">Admin</option>
+              <option value="TEACHER">Teacher</option>
+            </select>
+          </div>
+          <div className="flex justify-end gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50"
+            >
+              Cancel
             </button>
-          </form>
-          {roles.map(r => (
-            <div key={r.roleId} className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
-              <div className="flex items-center justify-between mb-2">
-                <div>
-                  <span className="font-bold text-gray-900">{r.name}</span>
-                  {r.isSystem && <span className="ml-2 text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">System</span>}
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-400 font-mono">{r.roleId}</span>
-                  {!r.isSystem && (
-                    <button onClick={() => deleteRole(r.roleId)} className="text-red-500 hover:text-red-700 text-xs font-medium border border-red-200 rounded px-2 py-0.5">Delete</button>
-                  )}
-                </div>
-              </div>
-              {r.description && <p className="text-sm text-gray-500 mb-3">{r.description}</p>}
-              <div className="flex flex-wrap gap-1.5">
-                {r.permissions?.map(p => (
-                  <span key={p} className="text-xs px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full">{p}</span>
-                ))}
-              </div>
-            </div>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded hover:bg-primary-700 disabled:opacity-50"
+            >
+              {submitting ? 'Creating...' : 'Create Employee'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+
+// ── Add Student Modal ─────────────────────────────────────────────────────────
+interface AddStudentModalProps {
+  onClose: () => void
+  onSubmit: (fullName: string, email: string, phone: string, dateOfBirth: string) => Promise<void>
+}
+
+function AddStudentModal({ onClose, onSubmit }: AddStudentModalProps) {
+  const [fullName, setFullName] = useState('')
+  const [email, setEmail]       = useState('')
+  const [phone, setPhone]       = useState('')
+  const [dob, setDob]           = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError]       = useState<string | null>(null)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!fullName.trim() || !email.trim()) {
+      setError('Full name and email are required')
+      return
+    }
+    setSubmitting(true)
+    setError(null)
+    try {
+      await onSubmit(fullName.trim(), email.trim(), phone.trim(), dob)
+      onClose()
+    } catch (err: any) {
+      setError(err.message ?? 'Failed to create student')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">Add Student</h2>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 text-xl leading-none"
+            aria-label="Close"
+          >
+            &times;
+          </button>
+        </div>
+
+        {error && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{error}</div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+            <input
+              type="text"
+              value={fullName}
+              onChange={e => setFullName(e.target.value)}
+              placeholder="John Doe"
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+            <input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="john@example.com"
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+            <input
+              type="tel"
+              value={phone}
+              onChange={e => setPhone(e.target.value)}
+              placeholder="+1 555 000 0000"
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth</label>
+            <input
+              type="date"
+              value={dob}
+              onChange={e => setDob(e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+          <div className="flex justify-end gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded hover:bg-primary-700 disabled:opacity-50"
+            >
+              {submitting ? 'Creating...' : 'Create Student'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+
+// ── Reset Password Modal ──────────────────────────────────────────────────────
+function generateTempPassword(): string {
+  const upper   = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
+  const lower   = 'abcdefghjkmnpqrstuvwxyz'
+  const digits  = '23456789'
+  const symbols = '!@#$%^&*'
+  const all     = upper + lower + digits + symbols
+  // Guarantee at least one of each required class
+  const pick = (s: string) => s[Math.floor(Math.random() * s.length)]
+  const base = [pick(upper), pick(lower), pick(digits), pick(symbols)]
+  for (let i = 0; i < 6; i++) base.push(pick(all))
+  // Fisher-Yates shuffle
+  for (let i = base.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [base[i], base[j]] = [base[j], base[i]]
+  }
+  return base.join('')
+}
+
+interface ResetPasswordModalProps {
+  userName: string
+  onClose: () => void
+  onConfirm: (temporaryPassword: string) => Promise<void>
+}
+
+function ResetPasswordModal({ userName, onClose, onConfirm }: ResetPasswordModalProps) {
+  const [password, setPassword]   = useState(() => generateTempPassword())
+  const [copied, setCopied]       = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError]         = useState<string | null>(null)
+
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(password).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  const handleConfirm = async () => {
+    if (!password.trim()) { setError('Password cannot be empty'); return }
+    setSubmitting(true)
+    setError(null)
+    try {
+      await onConfirm(password.trim())
+      onClose()
+    } catch (err: any) {
+      setError(err.message ?? 'Failed to reset password')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-sm p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">Reset Password</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none" aria-label="Close">
+            &times;
+          </button>
+        </div>
+
+        <p className="text-sm text-gray-600 mb-4">
+          Set a temporary password for <span className="font-medium text-gray-800">{userName}</span>.
+          They will be required to change it on first login.
+        </p>
+
+        {error && (
+          <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{error}</div>
+        )}
+
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Temporary Password</label>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+            <button
+              type="button"
+              onClick={copyToClipboard}
+              className="px-3 py-2 text-xs border border-gray-300 rounded hover:bg-gray-50 text-gray-600 whitespace-nowrap"
+            >
+              {copied ? '✓ Copied' : 'Copy'}
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={() => setPassword(generateTempPassword())}
+            className="mt-1 text-xs text-primary-600 hover:underline"
+          >
+            Regenerate
+          </button>
+        </div>
+
+        <div className="flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={submitting}
+            className="px-4 py-2 text-sm font-medium text-white bg-amber-600 rounded hover:bg-amber-700 disabled:opacity-50"
+          >
+            {submitting ? 'Resetting...' : 'Confirm Reset'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Main Page ─────────────────────────────────────────────────────────────────
+export default function AdminRolesPage() {
+  const { getIdToken } = useAuth()
+  const { isSuperAdmin, userRole, loaded } = usePermissions()
+  const router = useRouter()
+
+  const isAdmin = userRole?.roleId === 'ADMIN'
+  const canManageEmployees = isSuperAdmin || isAdmin
+
+  const [activeTab, setActiveTab] = useState<Tab>('students')
+  const [roles, setRoles] = useState<Role[]>([])
+  const [users, setUsers] = useState<CognitoUser[]>([])
+  const [loadingRoles, setLoadingRoles] = useState(false)
+  const [loadingUsers, setLoadingUsers] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [updatingUserId, setUpdatingUserId] = useState<string | null>(null)
+  const [successMsg, setSuccessMsg] = useState<string | null>(null)
+  const [showAddEmployee, setShowAddEmployee] = useState(false)
+  const [showAddStudent, setShowAddStudent]   = useState(false)
+  const [resetTarget, setResetTarget] = useState<{ userId: string; name: string } | null>(null)
+
+  // Only ADMIN and SUPER_ADMIN can access this page
+  useEffect(() => {
+    if (loaded && !canManageEmployees) router.replace('/dashboard')
+  }, [loaded, canManageEmployees, router])
+
+  const fetchRoles = useCallback(async () => {
+    setLoadingRoles(true)
+    setError(null)
+    try {
+      const token = await getIdToken()
+      const data = await apiFetch('/roles', token)
+      setRoles(data ?? [])
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setLoadingRoles(false)
+    }
+  }, [getIdToken])
+
+  const fetchUsers = useCallback(async () => {
+    setLoadingUsers(true)
+    setError(null)
+    try {
+      const token = await getIdToken()
+      const data = await apiFetch('/admin/users', token)
+      setUsers(data.users ?? [])
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setLoadingUsers(false)
+    }
+  }, [getIdToken])
+
+  useEffect(() => {
+    if (!loaded || !canManageEmployees) return
+    if (activeTab === 'roles') fetchRoles()
+    else fetchUsers()
+  }, [activeTab, loaded, canManageEmployees, fetchRoles, fetchUsers])
+
+  const handleRoleChange = async (userId: string, newRole: string) => {
+    setUpdatingUserId(userId)
+    setError(null)
+    setSuccessMsg(null)
+    try {
+      const token = await getIdToken()
+      await apiFetch(`/admin/users/${encodeURIComponent(userId)}/role`, token, {
+        method: 'PUT',
+        body: JSON.stringify({ role: newRole }),
+      })
+      setUsers(prev => prev.map(u =>
+        u.userId === userId ? { ...u, groups: [newRole] } : u
+      ))
+      setSuccessMsg('Role updated successfully')
+      setTimeout(() => setSuccessMsg(null), 3000)
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setUpdatingUserId(null)
+    }
+  }
+
+  const handleAddEmployee = async (name: string, email: string, role: string) => {
+    const token = await getIdToken()
+    await apiFetch('/employees', token, {
+      method: 'POST',
+      body: JSON.stringify({ name, email, role }),
+    })
+    setSuccessMsg('Employee created successfully')
+    setTimeout(() => setSuccessMsg(null), 3000)
+    fetchUsers()
+  }
+
+  const handleAddStudent = async (fullName: string, email: string, phone: string, dateOfBirth: string) => {
+    const token  = await getIdToken()
+    const userId = crypto.randomUUID()
+    await apiFetch('/students', token, {
+      method: 'POST',
+      body: JSON.stringify({ userId, email, fullName, phone, dateOfBirth }),
+    })
+    setSuccessMsg('Student created successfully')
+    setTimeout(() => setSuccessMsg(null), 3000)
+    fetchUsers()
+  }
+
+  const handleResetPassword = async (temporaryPassword: string) => {
+    if (!resetTarget) return
+    const token = await getIdToken()
+    await apiFetch(`/admin/users/${encodeURIComponent(resetTarget.userId)}/reset-password`, token, {
+      method: 'POST',
+      body: JSON.stringify({ temporaryPassword }),
+    })
+    setSuccessMsg('Temporary password set. Share it with the user.')
+    setTimeout(() => setSuccessMsg(null), 4000)
+  }
+
+  if (!loaded) return <div className="p-8 text-center text-gray-500">Loading...</div>
+  if (!canManageEmployees) return null
+
+  const students  = users.filter(u => u.groups.includes('STUDENT'))
+  const employees = users.filter(u => u.groups.some(g => EMPLOYEE_GROUPS.includes(g)))
+
+  const tabs: { id: Tab; label: string }[] = [
+    { id: 'students',  label: 'Students'  },
+    { id: 'employees', label: 'Employees' },
+    { id: 'roles',     label: 'Roles'     },
+  ]
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {showAddEmployee && (
+        <AddEmployeeModal
+          onClose={() => setShowAddEmployee(false)}
+          onSubmit={handleAddEmployee}
+        />
+      )}
+      {showAddStudent && (
+        <AddStudentModal
+          onClose={() => setShowAddStudent(false)}
+          onSubmit={handleAddStudent}
+        />
+      )}
+      {resetTarget && (
+        <ResetPasswordModal
+          userName={resetTarget.name}
+          onClose={() => setResetTarget(null)}
+          onConfirm={handleResetPassword}
+        />
+      )}
+
+      <div className="container mx-auto px-4 py-8 max-w-6xl">
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-gray-900">Roles & Permissions</h1>
+          <p className="text-gray-500 text-sm mt-1">Manage students, employees, and role permissions</p>
+        </div>
+
+        {error && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{error}</div>
+        )}
+        {successMsg && (
+          <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded text-green-700 text-sm">{successMsg}</div>
+        )}
+
+        {/* Tabs */}
+        <div className="flex gap-1 mb-6 border-b border-gray-200">
+          {tabs.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition -mb-px ${
+                activeTab === tab.id
+                  ? 'border-primary-600 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              {tab.label}
+            </button>
           ))}
         </div>
-      ) : (
-        <div className="space-y-8">
-          {/* Add employee form */}
-          <form onSubmit={addEmployee} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-            <h2 className="text-lg font-bold mb-4">Add Employee</h2>
-            <div className="grid sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Full name</label>
-                <input className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" value={empForm.fullName} onChange={e => setEmpForm(f => ({ ...f, fullName: e.target.value }))} />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Email address</label>
-                <input type="email" className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" value={empForm.email} onChange={e => setEmpForm(f => ({ ...f, email: e.target.value }))} />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Phone number</label>
-                <input className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" value={empForm.phone} onChange={e => setEmpForm(f => ({ ...f, phone: e.target.value }))} />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Role</label>
-                <select className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" value={empForm.role} onChange={e => setEmpForm(f => ({ ...f, role: e.target.value as 'ADMIN' | 'TEACHER' }))}>
-                  <option value="TEACHER">Teacher</option>
-                  <option value="ADMIN">Admin</option>
-                </select>
-              </div>
-              <div className="sm:col-span-2">
-                <label className="block text-sm font-medium mb-1">Department <span className="text-gray-400 font-normal">(optional)</span></label>
-                <input className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" value={empForm.department} onChange={e => setEmpForm(f => ({ ...f, department: e.target.value }))} />
+
+        {/* ── Tab 1: Students ─────────────────────────────────────────────── */}
+        {activeTab === 'students' && (
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+            <div className="p-4 border-b flex items-center justify-between">
+              <h2 className="font-semibold text-gray-700">
+                Students <span className="text-gray-400 font-normal text-sm">({students.length})</span>
+              </h2>
+              <div className="flex items-center gap-3">
+                <button onClick={fetchUsers} className="text-xs text-primary-600 hover:underline">
+                  Refresh
+                </button>
+                <button
+                  onClick={() => setShowAddStudent(true)}
+                  className="px-3 py-1.5 text-sm font-medium text-white bg-green-600 rounded hover:bg-green-700 transition"
+                >
+                  + Add Student
+                </button>
+                {canManageEmployees && (
+                  <button
+                    onClick={() => setShowAddEmployee(true)}
+                    className="px-3 py-1.5 text-sm font-medium text-white bg-primary-600 rounded hover:bg-primary-700 transition"
+                  >
+                    + Add Employee
+                  </button>
+                )}
               </div>
             </div>
-            <button type="submit" disabled={empSaving} className="mt-4 px-5 py-2 bg-primary-600 text-white text-sm font-semibold rounded-lg hover:bg-primary-700 disabled:opacity-60 transition">
-              {empSaving ? 'Adding...' : 'Add Employee'}
-            </button>
-          </form>
 
-          {/* Employees list */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b">
-                <tr>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase px-6 py-3">Name</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase px-6 py-3">Email</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase px-6 py-3">Role</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase px-6 py-3">Department</th>
-                  <th className="text-right text-xs font-semibold text-gray-500 uppercase px-6 py-3">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {employees.map(emp => (
-                  <tr key={emp.userId} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 font-medium text-gray-900">{emp.fullName}</td>
-                    <td className="px-6 py-4 text-gray-500 text-sm">{emp.email}</td>
-                    <td className="px-6 py-4"><span className="px-3 py-1 bg-primary-50 text-primary-700 rounded-full text-xs font-medium">{emp.role}</span></td>
-                    <td className="px-6 py-4 text-gray-500 text-sm">{emp.department || 'Ã¢ÂÂ'}</td>
-                    <td className="px-6 py-4 text-right">
-                      <button onClick={() => removeEmployee(emp.userId)} className="text-red-500 hover:text-red-700 text-xs font-medium border border-red-200 rounded px-2 py-1">Remove</button>
-                    </td>
-                  </tr>
-                ))}
-                {employees.length === 0 && (
-                  <tr><td colSpan={5} className="px-6 py-10 text-center text-gray-400">No employees yet.</td></tr>
-                )}
-              </tbody>
-            </table>
+            {loadingUsers ? (
+              <div className="p-8 text-center text-gray-400">Loading students...</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-gray-50">
+                      <th className="text-left p-3 font-medium text-gray-600">Name</th>
+                      <th className="text-left p-3 font-medium text-gray-600">Email</th>
+                      <th className="text-left p-3 font-medium text-gray-600">Enrolled Courses</th>
+                      <th className="text-left p-3 font-medium text-gray-600">Joined Date</th>
+                      <th className="text-left p-3 font-medium text-gray-600">Last Active</th>
+                      {isSuperAdmin && <th className="text-left p-3 font-medium text-gray-600">Actions</th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {students.length === 0 && (
+                      <tr>
+                        <td colSpan={isSuperAdmin ? 6 : 5} className="p-4 text-center text-gray-400">No students found.</td>
+                      </tr>
+                    )}
+                    {students.map(u => (
+                      <tr key={u.userId} className="border-b hover:bg-gray-50 transition">
+                        <td className="p-3 font-medium text-gray-800">{u.name}</td>
+                        <td className="p-3 text-gray-600">{u.email}</td>
+                        <td className="p-3 text-gray-600 text-center">
+                          {u.enrolledCourses != null ? u.enrolledCourses : '—'}
+                        </td>
+                        <td className="p-3 text-gray-500 text-xs">
+                          {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—'}
+                        </td>
+                        <td className="p-3 text-gray-500 text-xs">
+                          {u.lastActive ? new Date(u.lastActive).toLocaleDateString() : '—'}
+                        </td>
+                        {isSuperAdmin && (
+                          <td className="p-3">
+                            <button
+                              onClick={() => setResetTarget({ userId: u.userId, name: u.name })}
+                              title="Reset password"
+                              className="text-amber-600 hover:text-amber-800 text-xs font-medium px-2 py-1 border border-amber-300 rounded hover:bg-amber-50 transition"
+                            >
+                              🔑 Reset
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        )}
+
+        {/* ── Tab 2: Employees ────────────────────────────────────────────── */}
+        {activeTab === 'employees' && (
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+            <div className="p-4 border-b flex items-center justify-between">
+              <h2 className="font-semibold text-gray-700">
+                Employees <span className="text-gray-400 font-normal text-sm">({employees.length})</span>
+              </h2>
+              <button onClick={fetchUsers} className="text-xs text-primary-600 hover:underline">
+                Refresh
+              </button>
+            </div>
+
+            {!isSuperAdmin && (
+              <div className="px-4 py-2 bg-amber-50 border-b border-amber-100 text-amber-700 text-xs">
+                Role changes are restricted to Super Admins. You are viewing in read-only mode.
+              </div>
+            )}
+
+            {loadingUsers ? (
+              <div className="p-8 text-center text-gray-400">Loading employees...</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-gray-50">
+                      <th className="text-left p-3 font-medium text-gray-600">Name</th>
+                      <th className="text-left p-3 font-medium text-gray-600">Email</th>
+                      <th className="text-left p-3 font-medium text-gray-600">Current Role</th>
+                      <th className="text-left p-3 font-medium text-gray-600">Assign Role</th>
+                      {isSuperAdmin && <th className="text-left p-3 font-medium text-gray-600">Actions</th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {employees.length === 0 && (
+                      <tr>
+                        <td colSpan={isSuperAdmin ? 5 : 4} className="p-4 text-center text-gray-400">No employees found.</td>
+                      </tr>
+                    )}
+                    {employees.map(u => {
+                      const currentGroup = u.groups[0] ?? ''
+                      return (
+                        <tr key={u.userId} className="border-b hover:bg-gray-50 transition">
+                          <td className="p-3 font-medium text-gray-800">{u.name}</td>
+                          <td className="p-3 text-gray-600">{u.email}</td>
+                          <td className="p-3">
+                            {u.groups.length > 0
+                              ? u.groups.map(g => (
+                                  <span
+                                    key={g}
+                                    className="inline-block bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-full mr-1"
+                                  >
+                                    {g}
+                                  </span>
+                                ))
+                              : <span className="text-gray-400 text-xs">No group</span>
+                            }
+                          </td>
+                          <td className="p-3">
+                            {isSuperAdmin ? (
+                              <>
+                                <select
+                                  disabled={updatingUserId === u.userId}
+                                  value={currentGroup}
+                                  onChange={e => handleRoleChange(u.userId, e.target.value)}
+                                  className="border border-gray-300 rounded px-2 py-1 text-sm disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                                >
+                                  <option value="">-- select --</option>
+                                  {['SUPER_ADMIN', 'ADMIN', 'TEACHER'].map(g => (
+                                    <option key={g} value={g}>{g}</option>
+                                  ))}
+                                </select>
+                                {updatingUserId === u.userId && (
+                                  <span className="ml-2 text-xs text-gray-400">Saving...</span>
+                                )}
+                              </>
+                            ) : (
+                              <span className="text-gray-600 text-sm">{currentGroup || '—'}</span>
+                            )}
+                          </td>
+                          {isSuperAdmin && (
+                            <td className="p-3">
+                              <button
+                                onClick={() => setResetTarget({ userId: u.userId, name: u.name })}
+                                title="Reset password"
+                                className="text-amber-600 hover:text-amber-800 text-xs font-medium px-2 py-1 border border-amber-300 rounded hover:bg-amber-50 transition"
+                              >
+                                🔑 Reset
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Tab 3: Roles ────────────────────────────────────────────────── */}
+        {activeTab === 'roles' && (
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+            <div className="p-4 border-b flex items-center justify-between">
+              <h2 className="font-semibold text-gray-700">Roles</h2>
+              <button
+                onClick={fetchRoles}
+                className="text-xs text-primary-600 hover:underline"
+              >
+                Refresh
+              </button>
+            </div>
+            {loadingRoles ? (
+              <div className="p-8 text-center text-gray-400">Loading roles...</div>
+            ) : (
+              <div className="divide-y">
+                {roles.length === 0 && (
+                  <div className="p-6 text-center text-gray-400">No roles defined yet.</div>
+                )}
+                {roles.map(role => (
+                  <div key={role.roleId} className="p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-medium text-gray-800">{role.name}</span>
+                      <span className="text-xs text-gray-400">{role.roleId}</span>
+                    </div>
+                    {role.permissions && role.permissions.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {role.permissions.map(p => (
+                          <span key={p} className="bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded">{p}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
