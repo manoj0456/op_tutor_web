@@ -2,7 +2,6 @@ import type { Metadata } from 'next'
 import './globals.css'
 import { Providers } from '@/components/shared/Providers'
 import { Navbar } from '@/components/layout/Navbar'
-import { ActivityTracker } from '@/components/shared/ActivityTracker'
 
 export const metadata: Metadata = {
   title: 'OpTutor â Future-Ready Learning',
