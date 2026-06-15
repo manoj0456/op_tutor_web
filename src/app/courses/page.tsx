@@ -72,7 +72,7 @@ const DIFFICULTY_COLORS: Record<string, string> = {
 }
 
 // ── Course card ────────────────────────────────────────────────
-function CourseCard({ course, onClick }: { course: Course; onClick: () => void }) {
+function CourseCard({ course, onClick, locked }: { course: Course; onClick: () => void; locked?: boolean }) {
   const firstVideo = course.videos[0]
   const thumb = course.thumbnailUrl || (firstVideo ? getVideoThumbnail(firstVideo) : '')
 
@@ -92,6 +92,19 @@ function CourseCard({ course, onClick }: { course: Course; onClick: () => void }
         )}
         <span className="absolute top-2 left-2 text-xs bg-primary-600 text-white px-2 py-0.5 rounded-full">{course.category}</span>
         <span className={`absolute bottom-2 left-2 text-xs px-2 py-0.5 rounded-full font-bold ${course.isPaid ? 'bg-orange-500 text-white' : 'bg-green-500 text-white'}`}>{course.isPaid ? 'PAID' : 'FREE'}</span>
+        {locked && (
+          <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center gap-2 text-white">
+            <span className="text-2xl">🔒</span>
+            <span className="text-xs font-medium">Premium content</span>
+            <a
+              href="/signup"
+              onClick={e => e.stopPropagation()}
+              className="px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold rounded-full transition"
+            >
+              Sign up to access
+            </a>
+          </div>
+        )}
       </div>
       <div className="p-4">
         <h3 className="font-semibold text-gray-900 group-hover:text-primary-600 line-clamp-2 text-sm mb-1">{course.title}</h3>
@@ -218,7 +231,7 @@ function CourseDetail({ course, onBack }: { course: Course; onBack: () => void }
 
 // ── Main page ─────────────────────────────────────────────────
 export default function CoursesPage() {
-  const { getIdToken } = useAuth()
+  const { getIdToken, user } = useAuth()
   const { loaded } = usePermissions()
 
   const [courses, setCourses] = useState<Course[]>([])
@@ -318,9 +331,17 @@ export default function CoursesPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map(course => (
-            <CourseCard key={course.courseId} course={course} onClick={() => setSelectedCourse(course)} />
-          ))}
+          {filtered.map(course => {
+            const locked = course.isPaid && !user
+            return (
+              <CourseCard
+                key={course.courseId}
+                course={course}
+                locked={locked}
+                onClick={() => { if (!locked) setSelectedCourse(course) }}
+              />
+            )
+          })}
         </div>
       )}
     </div>
