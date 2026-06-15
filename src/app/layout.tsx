@@ -2,9 +2,10 @@ import type { Metadata } from 'next'
 import './globals.css'
 import { Providers } from '@/components/shared/Providers'
 import { Navbar } from '@/components/layout/Navbar'
+import { ActivityTracker } from '@/components/shared/ActivityTracker'
 
 export const metadata: Metadata = {
-  title: 'OpTutor – Future-Ready Learning',
+  title: 'OpTutor â Future-Ready Learning',
   description: 'Learn technology, AI, math, science and more with live classes and recorded courses.',
   keywords: ['online tutoring', 'AI learning', 'live classes', 'technology education'],
   icons: {

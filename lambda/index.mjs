@@ -142,7 +142,7 @@ function extractEmail(event) {
   } catch { return null; }
 }
 
-// ââ YouTube URL parser âââââââââââââââââââââââââââââââââââââââââ
+// Ã¢ÂÂÃ¢ÂÂ YouTube URL parser Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
 function parseYouTubeUrl(url) {
   if (!url) return null;
   const patterns = [
@@ -158,7 +158,7 @@ function parseYouTubeUrl(url) {
   return null;
 }
 
-// ââ Get caller email + permissions âââââââââââââââââââââââââââââ
+// Ã¢ÂÂÃ¢ÂÂ Get caller email + permissions Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
 async function getCallerContext(event) {
   const email = extractEmail(event);
   if (!email) return { email: null, roleRecord: null, permissions: new Set() };
@@ -177,7 +177,7 @@ async function getCallerContext(event) {
   }
 }
 
-// ââ Normalize video object (handles old + new shapes) âââââââââ
+// Ã¢ÂÂÃ¢ÂÂ Normalize video object (handles old + new shapes) Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
 function normalizeVideo(v, index) {
   const ytUrl = v.youtubeUrl || '';
   const parsed = parseYouTubeUrl(ytUrl);
@@ -209,7 +209,7 @@ export async function handler(event) {
   const body = parseBody(event);
 
   try {
-    // ── Roles ────────────────────────────────────────────
+    // ââ Roles ââââââââââââââââââââââââââââââââââââââââââââ
     if (resource === 'roles') {
       if (method === 'GET' && !id) return ok((await scanAll(TABLES.roles)).map(normalizeRole));
       const ctx = await getCallerContext(event);
@@ -252,10 +252,37 @@ export async function handler(event) {
         return ok({ deleted: true, roleId: id });
       }
     }
-    // ââ Users ââââââââââââââââââââââââââââââââââââââââââââââââââ
+    // Ã¢ÂÂÃ¢ÂÂ Users Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
     if (resource === 'users') {
       const ctx = await getCallerContext(event);
       if (!ctx.email) return unauthorized();
+
+      // ── Activity heartbeat (any authenticated user) ───────────
+      if (method === 'POST' && id === 'heartbeat') {
+        const seconds = Math.min(Number(body.seconds) || 60, 300);
+        const now = new Date().toISOString();
+        const sub = body.userId || '';
+        let updated = false;
+        for (const table of [TABLES.students, TABLES.employees]) {
+          try {
+            await ensureTable(table, 'userId');
+            if (sub) {
+              const got = await ddb.send(new GetCommand({ TableName: table, Key: { userId: sub } }));
+              if (got.Item) {
+                await ddb.send(new UpdateCommand({
+                  TableName: table,
+                  Key: { userId: sub },
+                  UpdateExpression: 'SET lastActiveAt = :n, totalTimeSpentSeconds = if_not_exists(totalTimeSpentSeconds, :z) + :s',
+                  ExpressionAttributeValues: { ':n': now, ':s': seconds, ':z': 0 },
+                }));
+                updated = true;
+                break;
+              }
+            }
+          } catch (err) { console.error('heartbeat update error:', err); }
+        }
+        return ok({ ok: true, updated, lastActiveAt: now });
+      }
 
       if (method === 'GET' && id === 'me') {
         const urRes = await ddb.send(new GetCommand({ TableName: TABLES.userRoles, Key: { userEmail: ctx.email } }));
@@ -296,7 +323,7 @@ export async function handler(event) {
       }
     }
 
-    // ââ Role Requests ââââââââââââââââââââââââââââââââââââââââââ
+    // Ã¢ÂÂÃ¢ÂÂ Role Requests Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
     if (resource === 'role-requests') {
       if (method === 'POST') {
         const { email, name, requestedRole } = body;
@@ -315,7 +342,7 @@ export async function handler(event) {
       if (method === 'GET') return ok(await scanAll(TABLES.roleRequests));
     }
 
-    // ââ Courses ââââââââââââââââââââââââââââââââââââââââââââââââ
+    // Ã¢ÂÂÃ¢ÂÂ Courses Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
     if (resource === 'courses') {
       if (method === 'GET' && !id) {
         const ctx = await getCallerContext(event);
@@ -401,7 +428,7 @@ export async function handler(event) {
       }
     }
 
-    // ââ Live Sessions ââââââââââââââââââââââââââââââââââââââââââ
+    // Ã¢ÂÂÃ¢ÂÂ Live Sessions Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
     if (resource === 'live-sessions') {
       if (method === 'GET' && !id) {
         const all = await scanAll(TABLES.liveSessions);
@@ -486,7 +513,7 @@ export async function handler(event) {
     }
 
 
-    // ââ Students (self-service signup profiles) ââââââââââââââââ
+    // Ã¢ÂÂÃ¢ÂÂ Students (self-service signup profiles) Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
     if (resource === 'students') {
       // Public self-registration: store profile after Cognito verification
       if (method === 'POST' && !id) {
