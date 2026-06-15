@@ -142,7 +142,7 @@ function extractEmail(event) {
   } catch { return null; }
 }
 
-// ── YouTube URL parser ─────────────────────────────────────────
+// ââ YouTube URL parser âââââââââââââââââââââââââââââââââââââââââ
 function parseYouTubeUrl(url) {
   if (!url) return null;
   const patterns = [
@@ -158,7 +158,7 @@ function parseYouTubeUrl(url) {
   return null;
 }
 
-// ── Get caller email + permissions ─────────────────────────────
+// ââ Get caller email + permissions âââââââââââââââââââââââââââââ
 async function getCallerContext(event) {
   const email = extractEmail(event);
   if (!email) return { email: null, roleRecord: null, permissions: new Set() };
@@ -177,7 +177,7 @@ async function getCallerContext(event) {
   }
 }
 
-// ── Normalize video object (handles old + new shapes) ─────────
+// ââ Normalize video object (handles old + new shapes) âââââââââ
 function normalizeVideo(v, index) {
   const ytUrl = v.youtubeUrl || '';
   const parsed = parseYouTubeUrl(ytUrl);
@@ -209,22 +209,50 @@ export async function handler(event) {
   const body = parseBody(event);
 
   try {
-    // ── Roles ──────────────────────────────────────────────────
+    // ── Roles ────────────────────────────────────────────
     if (resource === 'roles') {
       if (method === 'GET' && !id) return ok((await scanAll(TABLES.roles)).map(normalizeRole));
       const ctx = await getCallerContext(event);
       if (!ctx.email) return unauthorized();
+      if (!ctx.permissions.has('manage_roles')) return forbidden();
+
+      if (method === 'POST' && !id) {
+        const name = body.roleName || body.name;
+        if (!name) return badRequest('roleName is required');
+        const now = new Date().toISOString();
+        const item = {
+          roleId: body.roleId || randomUUID(),
+          name,
+          description: body.description || '',
+          permissions: Array.isArray(body.permissions) ? body.permissions : [],
+          isSystem: !!(body.isSystemRole || body.isSystem),
+          createdBy: ctx.email,
+          createdAt: now,
+        };
+        await ddb.send(new PutCommand({ TableName: TABLES.roles, Item: item }));
+        return created(normalizeRole(item));
+      }
+
       if (method === 'PUT' && id) {
-        if (!ctx.permissions.has('manage_roles')) return forbidden();
         const existing = await ddb.send(new GetCommand({ TableName: TABLES.roles, Key: { roleId: id } }));
         if (!existing.Item) return notFound('Role not found');
-        const updated = { ...existing.Item, ...body, roleId: id };
+        const patch = { ...body };
+        if (patch.roleName) { patch.name = patch.roleName; delete patch.roleName; }
+        if (typeof patch.isSystemRole !== 'undefined') { patch.isSystem = !!patch.isSystemRole; delete patch.isSystemRole; }
+        const updated = { ...existing.Item, ...patch, roleId: id, updatedBy: ctx.email, updatedAt: new Date().toISOString() };
         await ddb.send(new PutCommand({ TableName: TABLES.roles, Item: updated }));
         return ok(normalizeRole(updated));
       }
-    }
 
-    // ── Users ──────────────────────────────────────────────────
+      if (method === 'DELETE' && id) {
+        const existing = await ddb.send(new GetCommand({ TableName: TABLES.roles, Key: { roleId: id } }));
+        if (!existing.Item) return notFound('Role not found');
+        if (existing.Item.isSystem) return forbidden('System roles cannot be deleted');
+        await ddb.send(new DeleteCommand({ TableName: TABLES.roles, Key: { roleId: id } }));
+        return ok({ deleted: true, roleId: id });
+      }
+    }
+    // ââ Users ââââââââââââââââââââââââââââââââââââââââââââââââââ
     if (resource === 'users') {
       const ctx = await getCallerContext(event);
       if (!ctx.email) return unauthorized();
@@ -268,7 +296,7 @@ export async function handler(event) {
       }
     }
 
-    // ── Role Requests ──────────────────────────────────────────
+    // ââ Role Requests ââââââââââââââââââââââââââââââââââââââââââ
     if (resource === 'role-requests') {
       if (method === 'POST') {
         const { email, name, requestedRole } = body;
@@ -287,7 +315,7 @@ export async function handler(event) {
       if (method === 'GET') return ok(await scanAll(TABLES.roleRequests));
     }
 
-    // ── Courses ────────────────────────────────────────────────
+    // ââ Courses ââââââââââââââââââââââââââââââââââââââââââââââââ
     if (resource === 'courses') {
       if (method === 'GET' && !id) {
         const ctx = await getCallerContext(event);
@@ -373,7 +401,7 @@ export async function handler(event) {
       }
     }
 
-    // ── Live Sessions ──────────────────────────────────────────
+    // ââ Live Sessions ââââââââââââââââââââââââââââââââââââââââââ
     if (resource === 'live-sessions') {
       if (method === 'GET' && !id) {
         const all = await scanAll(TABLES.liveSessions);
@@ -458,7 +486,7 @@ export async function handler(event) {
     }
 
 
-    // ── Students (self-service signup profiles) ────────────────
+    // ââ Students (self-service signup profiles) ââââââââââââââââ
     if (resource === 'students') {
       // Public self-registration: store profile after Cognito verification
       if (method === 'POST' && !id) {

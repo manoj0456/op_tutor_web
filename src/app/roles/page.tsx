@@ -6,6 +6,17 @@ import toast from 'react-hot-toast'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? ''
 
+// Page-access -> permission mapping for the role builder
+const PAGE_PERMISSIONS: { label: string; permission: string }[] = [
+  { label: 'Courses', permission: 'view_content' },
+  { label: 'Live Sessions', permission: 'view_content' },
+  { label: 'Content Management', permission: 'manage_courses' },
+  { label: 'Users', permission: 'manage_users' },
+  { label: 'Roles', permission: 'manage_roles' },
+  { label: 'Reports (future)', permission: 'view_reports' },
+]
+const UNIQUE_PAGE_PERMS = Array.from(new Map(PAGE_PERMISSIONS.map(p => [p.permission, p])).values())
+
 interface Role {
   roleId: string
   name: string
@@ -83,7 +94,7 @@ export default function RolesPage() {
       const created = await apiFetch('/employees', { method: 'POST', body: JSON.stringify(empForm) })
       setEmployees(prev => [created, ...prev])
       setEmpForm({ fullName: '', email: '', phone: '', role: 'TEACHER', department: '' })
-      toast.success('Employee added â a temporary password was emailed to them')
+      toast.success('Employee added Ã¢ÂÂ a temporary password was emailed to them')
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Failed to add employee')
     } finally {
@@ -102,13 +113,41 @@ export default function RolesPage() {
     }
   }
 
+  const togglePerm = (perm: string) =>
+    setNewRole(r => ({ ...r, permissions: r.permissions.includes(perm) ? r.permissions.filter(p => p !== perm) : [...r.permissions, perm] }))
+
+  const createRole = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newRole.name.trim()) { toast.error('Role name is required'); return }
+    setRoleSaving(true)
+    try {
+      const created = await apiFetch('/roles', { method: 'POST', body: JSON.stringify({ roleName: newRole.name.trim(), description: newRole.description.trim(), permissions: newRole.permissions }) })
+      setRoles(prev => [...prev, created])
+      setNewRole({ name: '', description: '', permissions: [] })
+      toast.success('Role created')
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to create role')
+    } finally { setRoleSaving(false) }
+  }
+
+  const deleteRole = async (roleId: string) => {
+    if (!confirm('Delete this role?')) return
+    try {
+      await apiFetch(`/roles/${encodeURIComponent(roleId)}`, { method: 'DELETE' })
+      setRoles(prev => prev.filter(r => r.roleId !== roleId))
+      toast.success('Role deleted')
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete role')
+    }
+  }
+
   if (!loaded) return <div className="flex items-center justify-center min-h-screen">Loading...</div>
 
   if (!isSuperAdmin) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <div className="text-5xl mb-4">ð</div>
+          <div className="text-5xl mb-4">Ã°ÂÂÂ</div>
           <h1 className="text-2xl font-bold text-gray-800 mb-2">Access Denied</h1>
           <p className="text-gray-500">Only SUPER_ADMIN users can manage roles.</p>
         </div>
@@ -178,6 +217,25 @@ export default function RolesPage() {
         </div>
       ) : tab === 'roles' ? (
         <div className="grid gap-4">
+          <form onSubmit={createRole} className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+            <h2 className="font-bold text-gray-900 mb-3">Add New Role</h2>
+            <div className="grid sm:grid-cols-2 gap-3 mb-3">
+              <input className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" placeholder="Role name" value={newRole.name} onChange={e => setNewRole(r => ({ ...r, name: e.target.value }))} />
+              <input className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" placeholder="Description" value={newRole.description} onChange={e => setNewRole(r => ({ ...r, description: e.target.value }))} />
+            </div>
+            <p className="text-xs font-medium text-gray-500 mb-2">Page access</p>
+            <div className="flex flex-wrap gap-3 mb-4">
+              {UNIQUE_PAGE_PERMS.map(pp => (
+                <label key={pp.permission} className="flex items-center gap-1.5 text-sm text-gray-700">
+                  <input type="checkbox" checked={newRole.permissions.includes(pp.permission)} onChange={() => togglePerm(pp.permission)} />
+                  {pp.label}
+                </label>
+              ))}
+            </div>
+            <button type="submit" disabled={roleSaving} className="px-5 py-2 bg-primary-600 text-white text-sm font-semibold rounded-lg hover:bg-primary-700 disabled:opacity-60 transition">
+              {roleSaving ? 'Creating...' : 'Create Role'}
+            </button>
+          </form>
           {roles.map(r => (
             <div key={r.roleId} className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
               <div className="flex items-center justify-between mb-2">
@@ -185,7 +243,12 @@ export default function RolesPage() {
                   <span className="font-bold text-gray-900">{r.name}</span>
                   {r.isSystem && <span className="ml-2 text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">System</span>}
                 </div>
-                <span className="text-xs text-gray-400 font-mono">{r.roleId}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-400 font-mono">{r.roleId}</span>
+                  {!r.isSystem && (
+                    <button onClick={() => deleteRole(r.roleId)} className="text-red-500 hover:text-red-700 text-xs font-medium border border-red-200 rounded px-2 py-0.5">Delete</button>
+                  )}
+                </div>
               </div>
               {r.description && <p className="text-sm text-gray-500 mb-3">{r.description}</p>}
               <div className="flex flex-wrap gap-1.5">
@@ -249,7 +312,7 @@ export default function RolesPage() {
                     <td className="px-6 py-4 font-medium text-gray-900">{emp.fullName}</td>
                     <td className="px-6 py-4 text-gray-500 text-sm">{emp.email}</td>
                     <td className="px-6 py-4"><span className="px-3 py-1 bg-primary-50 text-primary-700 rounded-full text-xs font-medium">{emp.role}</span></td>
-                    <td className="px-6 py-4 text-gray-500 text-sm">{emp.department || 'â'}</td>
+                    <td className="px-6 py-4 text-gray-500 text-sm">{emp.department || 'Ã¢ÂÂ'}</td>
                     <td className="px-6 py-4 text-right">
                       <button onClick={() => removeEmployee(emp.userId)} className="text-red-500 hover:text-red-700 text-xs font-medium border border-red-200 rounded px-2 py-1">Remove</button>
                     </td>
