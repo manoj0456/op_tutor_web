@@ -60,6 +60,7 @@ function normalizeCourse(c: any): Course {
     difficultyLevel: c.difficultyLevel || 'BEGINNER',
     tags: Array.isArray(c.tags) ? c.tags : [],
     status: (c.status || 'PUBLISHED').toUpperCase() as Course['status'],
+    isPaid: !!c.isPaid,
     videos,
   }
 }
@@ -90,6 +91,7 @@ function CourseCard({ course, onClick }: { course: Course; onClick: () => void }
           <span className="absolute top-2 right-2 text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full font-medium">Draft</span>
         )}
         <span className="absolute top-2 left-2 text-xs bg-primary-600 text-white px-2 py-0.5 rounded-full">{course.category}</span>
+        <span className={`absolute bottom-2 left-2 text-xs px-2 py-0.5 rounded-full font-bold ${course.isPaid ? 'bg-orange-500 text-white' : 'bg-green-500 text-white'}`}>{course.isPaid ? 'PAID' : 'FREE'}</span>
       </div>
       <div className="p-4">
         <h3 className="font-semibold text-gray-900 group-hover:text-primary-600 line-clamp-2 text-sm mb-1">{course.title}</h3>

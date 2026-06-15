@@ -162,6 +162,7 @@ function CourseForm({ initial, onSave, onCancel, getToken }: {
   const [difficultyLevel, setDifficultyLevel] = useState<Course['difficultyLevel']>(initial?.difficultyLevel ?? 'BEGINNER')
   const [instructorName, setInstructorName] = useState(initial?.instructorName ?? '')
   const [status, setStatus] = useState<Course['status']>(initial?.status ?? 'DRAFT')
+  const [isPaid, setIsPaid] = useState<boolean>(initial?.isPaid ?? false)
   const [videos, setVideos] = useState<VideoRow[]>(fromInitial(initial))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -195,6 +196,7 @@ function CourseForm({ initial, onSave, onCancel, getToken }: {
           category, tags, difficultyLevel,
           instructorName: instructorName.trim(),
           status: publish ? 'PUBLISHED' : status,
+          isPaid,
           videos: validVideos.map((v, i) => {
             const parsed = parseYouTubeUrl(v.youtubeUrl)!
             return { title: v.title.trim() || `Video ${i + 1}`, description: v.description.trim(), youtubeUrl: v.youtubeUrl, providerType: 'YOUTUBE', providerVideoId: parsed.providerVideoId, embedUrl: parsed.embedUrl, order: i }
@@ -255,6 +257,13 @@ function CourseForm({ initial, onSave, onCancel, getToken }: {
           </Field>
         </div>
 
+        <Field label="Access">
+          <div className="flex items-center gap-3">
+            <button type="button" onClick={() => setIsPaid(false)} className={`px-4 py-1.5 rounded-full text-xs font-semibold transition ${!isPaid ? 'bg-green-100 text-green-700 ring-2 ring-green-300' : 'bg-gray-100 text-gray-500'}`}>Free</button>
+            <button type="button" onClick={() => setIsPaid(true)} className={`px-4 py-1.5 rounded-full text-xs font-semibold transition ${isPaid ? 'bg-orange-100 text-orange-700 ring-2 ring-orange-300' : 'bg-gray-100 text-gray-500'}`}>Paid</button>
+          </div>
+        </Field>
+
         <Field label="Tags">
           <TagsInput value={tags} onChange={setTags} />
         </Field>
@@ -302,7 +311,7 @@ function CoursesTab({ getToken }: { getToken: () => Promise<string> }) {
       const token = await getToken()
       const data = await apiFetch('/courses', token)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      setCourses(data.map((c: any) => ({ ...c, shortDescription: c.shortDescription || c.description || '', instructorName: c.instructorName || '', difficultyLevel: c.difficultyLevel || 'BEGINNER', tags: c.tags || [], status: (c.status || 'DRAFT').toUpperCase() })))
+      setCourses(data.map((c: any) => ({ ...c, shortDescription: c.shortDescription || c.description || '', instructorName: c.instructorName || '', difficultyLevel: c.difficultyLevel || 'BEGINNER', tags: c.tags || [], isPaid: !!c.isPaid, status: (c.status || 'DRAFT').toUpperCase() })))
     } catch { /* silent */ }
     finally { setLoading(false) }
   }, [getToken])
@@ -312,7 +321,7 @@ function CoursesTab({ getToken }: { getToken: () => Promise<string> }) {
   const handleSaved = (saved: Course) => {
     setCourses(prev => {
       const idx = prev.findIndex(c => c.courseId === saved.courseId)
-      const norm = { ...saved, shortDescription: saved.shortDescription || '', instructorName: saved.instructorName || '', difficultyLevel: saved.difficultyLevel || 'BEGINNER', tags: saved.tags || [], status: (saved.status || 'DRAFT').toUpperCase() as Course['status'] }
+      const norm = { ...saved, shortDescription: saved.shortDescription || '', instructorName: saved.instructorName || '', difficultyLevel: saved.difficultyLevel || 'BEGINNER', tags: saved.tags || [], isPaid: !!saved.isPaid, status: (saved.status || 'DRAFT').toUpperCase() as Course['status'] }
       return idx >= 0 ? prev.map(c => c.courseId === saved.courseId ? norm : c) : [norm, ...prev]
     })
     setEditing(undefined)
@@ -434,6 +443,7 @@ function SessionForm({ initial, onSave, onCancel, getToken }: {
   const [duration, setDuration] = useState(String(initial?.duration ?? 60))
   const [timezone, setTimezone] = useState(initial?.timezone ?? 'UTC')
   const [status, setStatus] = useState<LiveSession['status']>(initial?.status ?? 'UPCOMING')
+  const [isPaid, setIsPaid] = useState<boolean>(initial?.isPaid ?? false)
   const [youtubeUrl, setYoutubeUrl] = useState(initial?.youtubeUrl ?? '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -461,6 +471,7 @@ function SessionForm({ initial, onSave, onCancel, getToken }: {
           description: description.trim(),
           instructorName: instructorName.trim(),
           scheduledAt, duration: Number(duration), timezone, status,
+          isPaid,
           youtubeUrl: youtubeUrl.trim(),
           providerType: 'YOUTUBE',
           providerVideoId: parsed.providerVideoId,
@@ -527,6 +538,13 @@ function SessionForm({ initial, onSave, onCancel, getToken }: {
           </select>
         </Field>
 
+        <Field label="Access">
+          <div className="flex items-center gap-3">
+            <button type="button" onClick={() => setIsPaid(false)} className={`px-4 py-1.5 rounded-full text-xs font-semibold transition ${!isPaid ? 'bg-green-100 text-green-700 ring-2 ring-green-300' : 'bg-gray-100 text-gray-500'}`}>Free</button>
+            <button type="button" onClick={() => setIsPaid(true)} className={`px-4 py-1.5 rounded-full text-xs font-semibold transition ${isPaid ? 'bg-orange-100 text-orange-700 ring-2 ring-orange-300' : 'bg-gray-100 text-gray-500'}`}>Paid</button>
+          </div>
+        </Field>
+
         <Field label="YouTube Live URL" required>
           <input
             className={`${input} ${youtubeUrl && !urlValid ? 'border-red-400' : ''}`}
@@ -566,7 +584,7 @@ function LiveSessionsTab({ getToken }: { getToken: () => Promise<string> }) {
         const status: LiveSession['status'] = rawStatus.toUpperCase() in { LIVE: 1, UPCOMING: 1, COMPLETED: 1, CANCELLED: 1 }
           ? rawStatus.toUpperCase() as LiveSession['status']
           : (statusMap[rawStatus.toLowerCase()] ?? 'UPCOMING')
-        return { ...s, status, instructorName: s.instructorName || s.hostName || '', shortDescription: s.shortDescription || '', timezone: s.timezone || 'UTC' }
+        return { ...s, status, instructorName: s.instructorName || s.hostName || '', shortDescription: s.shortDescription || '', timezone: s.timezone || 'UTC', isPaid: !!s.isPaid }
       }))
     } catch { /* silent */ }
     finally { setLoading(false) }
