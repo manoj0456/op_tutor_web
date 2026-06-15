@@ -397,15 +397,18 @@ export default function AdminRolesPage() {
   const [resetTarget, setResetTarget] = useState<{ userId: string; name: string } | null>(null)
 
   // Only ADMIN and SUPER_ADMIN can access this page.
-  // Guard against the auth race condition: AuthContext initialises `user` as
-  // `undefined` (loading) before the Cognito session resolves. PermissionContext
-  // sees !user and immediately sets loaded=true with userRole=null, making
-  // canManageEmployees false. We must not redirect until auth has settled.
+  // Two-stage race condition guard:
+  // 1. AuthContext starts with user=undefined (loading); PermissionContext fires
+  //    early and sets loaded=true + userRole=null. Skip until user is known.
+  // 2. When auth resolves (user=CognitoUser), React fires THIS effect BEFORE
+  //    PermissionContext's effect resets loaded=false and re-fetches. Guard on
+  //    userRole===null to prevent redirecting during that inter-render gap.
   useEffect(() => {
     if (!loaded) return
-    if (user === undefined) return   // auth still initialising — wait
+    if (user === undefined) return   // auth still initialising
+    if (userRole === null) return    // permissions not yet resolved for current user
     if (!canManageEmployees) router.replace('/')
-  }, [loaded, canManageEmployees, router, user])
+  }, [loaded, canManageEmployees, router, user, userRole])
 
   const fetchRoles = useCallback(async () => {
     setLoadingRoles(true)
