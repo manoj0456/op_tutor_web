@@ -581,14 +581,6 @@ export default function AdminRolesPage() {
                 >
                   + Add Student
                 </button>
-                {canManageEmployees && (
-                  <button
-                    onClick={() => setShowAddEmployee(true)}
-                    className="px-3 py-1.5 text-sm font-medium text-white bg-primary-600 rounded hover:bg-primary-700 transition"
-                  >
-                    + Add Employee
-                  </button>
-                )}
               </div>
             </div>
 
@@ -653,9 +645,19 @@ export default function AdminRolesPage() {
               <h2 className="font-semibold text-gray-700">
                 Employees <span className="text-gray-400 font-normal text-sm">({employees.length})</span>
               </h2>
-              <button onClick={fetchUsers} className="text-xs text-primary-600 hover:underline">
-                Refresh
-              </button>
+              <div className="flex items-center gap-3">
+                <button onClick={fetchUsers} className="text-xs text-primary-600 hover:underline">
+                  Refresh
+                </button>
+                {canManageEmployees && (
+                  <button
+                    onClick={() => setShowAddEmployee(true)}
+                    className="px-3 py-1.5 text-sm font-medium text-white bg-primary-600 rounded hover:bg-primary-700 transition"
+                  >
+                    + Add Employee
+                  </button>
+                )}
+              </div>
             </div>
 
             {!isSuperAdmin && (
