@@ -1,14 +1,16 @@
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBClient, CreateTableCommand, DescribeTableCommand } from '@aws-sdk/client-dynamodb';
 import {
   DynamoDBDocumentClient,
   ScanCommand,
   PutCommand,
   GetCommand,
   DeleteCommand,
+  UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { randomUUID } from 'crypto';
 
-const client = new DynamoDBClient({ region: process.env.AWS_REGION || 'us-east-2' });
+const REGION = process.env.AWS_REGION || 'us-east-2';
+const client = new DynamoDBClient({ region: REGION });
 const ddb = DynamoDBDocumentClient.from(client);
 
 const TABLES = {
@@ -17,7 +19,41 @@ const TABLES = {
   roleRequests: 'OpTutor-RoleRequests',
   courses: 'OpTutor-Courses',
   liveSessions: 'OpTutor-LiveSessions',
+  students: 'optutor-students',
+  employees: 'optutor-employees',
 };
+
+const ensuredTables = new Set();
+
+async function ensureTable(tableName, pk) {
+  if (ensuredTables.has(tableName)) return;
+  try {
+    await client.send(new DescribeTableCommand({ TableName: tableName }));
+    ensuredTables.add(tableName);
+    return;
+  } catch (err) {
+    if (err.name !== 'ResourceNotFoundException') throw err;
+  }
+  try {
+    await client.send(new CreateTableCommand({
+      TableName: tableName,
+      AttributeDefinitions: [{ AttributeName: pk, AttributeType: 'S' }],
+      KeySchema: [{ AttributeName: pk, KeyType: 'HASH' }],
+      BillingMode: 'PAY_PER_REQUEST',
+    }));
+    for (let i = 0; i < 20; i++) {
+      try {
+        const d = await client.send(new DescribeTableCommand({ TableName: tableName }));
+        if (d.Table?.TableStatus === 'ACTIVE') break;
+      } catch { /* not ready */ }
+      await new Promise(r => setTimeout(r, 1000));
+    }
+    ensuredTables.add(tableName);
+  } catch (err) {
+    if (err.name === 'ResourceInUseException') { ensuredTables.add(tableName); return; }
+    throw err;
+  }
+}
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -155,6 +191,35 @@ export async function handler(event) {
     if (resource === 'users') {
       const ctx = await getCallerContext(event);
       if (!ctx.email) return unauthorized();
+
+      // ── Activity heartbeat (any authenticated user) ──────────
+      if (method === 'POST' && id === 'heartbeat') {
+        const seconds = Math.min(Number(body.seconds) || 60, 300);
+        const now = new Date().toISOString();
+        // Find which table the caller belongs to (student or employee) by email scan.
+        // Cheaper path: try students by userId from token sub, else employees.
+        const sub = body.userId || '';
+        let updated = false;
+        for (const table of [TABLES.students, TABLES.employees]) {
+          try {
+            await ensureTable(table, 'userId');
+            if (sub) {
+              const got = await ddb.send(new GetCommand({ TableName: table, Key: { userId: sub } }));
+              if (got.Item) {
+                await ddb.send(new UpdateCommand({
+                  TableName: table,
+                  Key: { userId: sub },
+                  UpdateExpression: 'SET lastActiveAt = :n, totalTimeSpentSeconds = if_not_exists(totalTimeSpentSeconds, :z) + :s',
+                  ExpressionAttributeValues: { ':n': now, ':s': seconds, ':z': 0 },
+                }));
+                updated = true;
+                break;
+              }
+            }
+          } catch (err) { console.error('heartbeat update error:', err); }
+        }
+        return ok({ ok: true, updated, lastActiveAt: now });
+      }
 
       if (method === 'GET' && id === 'me') {
         const urRes = await ddb.send(new GetCommand({ TableName: TABLES.userRoles, Key: { userEmail: ctx.email } }));
@@ -378,6 +443,30 @@ export async function handler(event) {
         await ddb.send(new DeleteCommand({ TableName: TABLES.liveSessions, Key: { sessionId: id } }));
         return ok({ deleted: true, sessionId: id });
       }
+    }
+
+
+    // ── Students (read for Users page) ─────────────────────────
+    if (resource === 'students') {
+      const ctx = await getCallerContext(event);
+      if (!ctx.email) return unauthorized();
+      if (!ctx.permissions.has('manage_users')) return forbidden();
+      await ensureTable(TABLES.students, 'userId');
+      if (method === 'GET' && !id) return ok(await scanAll(TABLES.students));
+      if (method === 'GET' && id) {
+        const res = await ddb.send(new GetCommand({ TableName: TABLES.students, Key: { userId: id } }));
+        if (!res.Item) return notFound('Student not found');
+        return ok(res.Item);
+      }
+    }
+
+    // ── Employees (read for Users page) ────────────────────────
+    if (resource === 'employees') {
+      const ctx = await getCallerContext(event);
+      if (!ctx.email) return unauthorized();
+      if (!ctx.permissions.has('manage_users')) return forbidden();
+      await ensureTable(TABLES.employees, 'userId');
+      if (method === 'GET' && !id) return ok(await scanAll(TABLES.employees));
     }
 
     return notFound('Unknown resource: ' + resource);

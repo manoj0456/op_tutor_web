@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import './globals.css'
 import { Providers } from '@/components/shared/Providers'
 import { Navbar } from '@/components/layout/Navbar'
+import { ActivityTracker } from '@/components/shared/ActivityTracker'
 
 export const metadata: Metadata = {
   title: 'OpTutor – Future-Ready Learning',
@@ -19,6 +20,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" suppressHydrationWarning>
       <body>
         <Providers>
+          <ActivityTracker />
           <Navbar />
           {children}
         </Providers>
