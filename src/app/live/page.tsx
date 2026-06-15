@@ -60,6 +60,7 @@ function normalizeSession(s: any): LiveSession {
     providerVideoId: s.providerVideoId || parsed?.providerVideoId || '',
     embedUrl: s.embedUrl || parsed?.embedUrl || '',
     youtubeUrl: ytUrl,
+    isPaid: !!s.isPaid,
   }
 }
 
@@ -169,7 +170,10 @@ function SessionCard({ session, onClick }: { session: LiveSession; onClick: () =
             <h3 className="font-semibold text-gray-900 group-hover:text-primary-600 transition text-sm line-clamp-2">
               {session.title}
             </h3>
-            <StatusBadge status={session.status} />
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${session.isPaid ? 'bg-orange-500 text-white' : 'bg-green-500 text-white'}`}>{session.isPaid ? 'PAID' : 'FREE'}</span>
+              <StatusBadge status={session.status} />
+            </div>
           </div>
           {session.instructorName && (
             <p className="text-xs text-gray-500">Instructor: {session.instructorName}</p>

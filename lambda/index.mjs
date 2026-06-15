@@ -312,7 +312,7 @@ export async function handler(event) {
       if (!ctx.permissions.has('manage_courses')) return forbidden();
 
       if (method === 'POST') {
-        const { title, thumbnailUrl, shortDescription, description, category, tags, difficultyLevel, instructorName, videos, status } = body;
+        const { title, thumbnailUrl, shortDescription, description, category, tags, difficultyLevel, instructorName, videos, status, isPaid } = body;
         if (!title) return badRequest('title is required');
         if (!videos || !Array.isArray(videos) || videos.length === 0) return badRequest('At least one video is required');
         const now = new Date().toISOString();
@@ -327,6 +327,7 @@ export async function handler(event) {
           tags: Array.isArray(tags) ? tags : [],
           difficultyLevel: difficultyLevel || 'BEGINNER',
           instructorName: instructorName || ctx.email,
+          isPaid: !!isPaid,
           videos: videos.map((v, i) => normalizeVideo(v, i)),
           status: normalizedStatus,
           createdBy: ctx.email,
@@ -353,6 +354,7 @@ export async function handler(event) {
           updatedBy: ctx.email,
           updatedAt: now,
           ...(incomingStatus ? { status: incomingStatus } : {}),
+          ...(typeof body.isPaid !== 'undefined' ? { isPaid: !!body.isPaid } : {}),
           ...(!wasPublished && willPublish ? { publishedAt: now } : {}),
         };
         if (Array.isArray(updated.videos)) {
@@ -395,7 +397,7 @@ export async function handler(event) {
       if (!ctx.permissions.has('manage_courses')) return forbidden();
 
       if (method === 'POST') {
-        const { title, thumbnailUrl, shortDescription, description, instructorName, youtubeUrl, scheduledAt, duration, timezone, status, providerType, providerVideoId, embedUrl } = body;
+        const { title, thumbnailUrl, shortDescription, description, instructorName, youtubeUrl, scheduledAt, duration, timezone, status, providerType, providerVideoId, embedUrl, isPaid } = body;
         if (!title) return badRequest('title is required');
         if (!youtubeUrl) return badRequest('youtubeUrl is required');
         if (!scheduledAt) return badRequest('scheduledAt is required');
@@ -413,6 +415,7 @@ export async function handler(event) {
           duration: Number(duration) || 60,
           timezone: timezone || 'UTC',
           status: (status || 'UPCOMING').toUpperCase(),
+          isPaid: !!isPaid,
           providerType: providerType || 'YOUTUBE',
           providerVideoId: providerVideoId || parsed?.providerVideoId || '',
           embedUrl: embedUrl || parsed?.embedUrl || '',
@@ -439,6 +442,7 @@ export async function handler(event) {
           updatedBy: ctx.email,
           updatedAt: now,
           ...(body.status ? { status: body.status.toUpperCase() } : {}),
+          ...(typeof body.isPaid !== 'undefined' ? { isPaid: !!body.isPaid } : {}),
           ...(parsed ? { providerVideoId: parsed.providerVideoId, embedUrl: parsed.embedUrl } : {}),
           // keep legacy hostName in sync
           ...(body.instructorName ? { hostName: body.instructorName } : {}),
