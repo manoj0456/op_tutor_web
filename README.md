@@ -115,3 +115,22 @@ NEXT_PUBLIC_API_BASE_URL=https://your-api-id.execute-api.us-east-2.amazonaws.com
 ## Companion App
 
 Mobile app (iOS/Android): [op_tutor_app](https://github.com/manoj0456/op_tutor_app)
+
+---
+
+## Admin Features
+
+### Roles & Permissions (`/admin/roles`)
+
+Accessible to **ADMIN** and **SUPER_ADMIN** users. Contains three tabs:
+
+**Students tab**
+Lists all Cognito users in the `STUDENT` group. Columns: Name, Email, Enrolled Courses, Joined Date, Last Active. An **Add Employee** button (top-right) is visible to ADMIN and SUPER_ADMIN; clicking it opens a modal to create a new employee (name, email, role: Admin or Teacher) which calls `POST /employees`.
+
+**Employees tab**
+Lists all non-student Cognito users — those in the `SUPER_ADMIN`, `ADMIN`, or `TEACHER` groups — fetched from `GET /admin/users`. Columns: Name, Email, Current Role, Assign Role.
+- **SUPER_ADMIN**: sees a role dropdown and can reassign any employee's Cognito group via `PUT /admin/users/{userId}/role`.
+- **ADMIN**: sees roles as read-only text; role changes are not permitted.
+
+**Roles tab**
+Displays all roles defined in the system (fetched from `GET /roles`) with their associated permissions. No changes can be made from this tab.
