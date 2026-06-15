@@ -83,7 +83,7 @@ export default function RolesPage() {
       const created = await apiFetch('/employees', { method: 'POST', body: JSON.stringify(empForm) })
       setEmployees(prev => [created, ...prev])
       setEmpForm({ fullName: '', email: '', phone: '', role: 'TEACHER', department: '' })
-      toast.success('Employee added — a temporary password was emailed to them')
+      toast.success('Employee added â a temporary password was emailed to them')
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Failed to add employee')
     } finally {
@@ -108,7 +108,7 @@ export default function RolesPage() {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <div className="text-5xl mb-4">🔒</div>
+          <div className="text-5xl mb-4">ð</div>
           <h1 className="text-2xl font-bold text-gray-800 mb-2">Access Denied</h1>
           <p className="text-gray-500">Only SUPER_ADMIN users can manage roles.</p>
         </div>
@@ -249,7 +249,7 @@ export default function RolesPage() {
                     <td className="px-6 py-4 font-medium text-gray-900">{emp.fullName}</td>
                     <td className="px-6 py-4 text-gray-500 text-sm">{emp.email}</td>
                     <td className="px-6 py-4"><span className="px-3 py-1 bg-primary-50 text-primary-700 rounded-full text-xs font-medium">{emp.role}</span></td>
-                    <td className="px-6 py-4 text-gray-500 text-sm">{emp.department || '—'}</td>
+                    <td className="px-6 py-4 text-gray-500 text-sm">{emp.department || 'â'}</td>
                     <td className="px-6 py-4 text-right">
                       <button onClick={() => removeEmployee(emp.userId)} className="text-red-500 hover:text-red-700 text-xs font-medium border border-red-200 rounded px-2 py-1">Remove</button>
                     </td>
