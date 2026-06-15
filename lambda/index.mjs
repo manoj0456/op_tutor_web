@@ -141,13 +141,42 @@ export async function handler(event) {
       if (method === 'GET' && !id) return ok((await scanAll(TABLES.roles)).map(normalizeRole));
       const ctx = await getCallerContext(event);
       if (!ctx.email) return unauthorized();
+      if (!ctx.permissions.has('manage_roles')) return forbidden();
+
+      if (method === 'POST' && !id) {
+        const name = body.roleName || body.name;
+        if (!name) return badRequest('roleName is required');
+        const now = new Date().toISOString();
+        const item = {
+          roleId: body.roleId || randomUUID(),
+          name,
+          description: body.description || '',
+          permissions: Array.isArray(body.permissions) ? body.permissions : [],
+          isSystem: !!(body.isSystemRole || body.isSystem),
+          createdBy: ctx.email,
+          createdAt: now,
+        };
+        await ddb.send(new PutCommand({ TableName: TABLES.roles, Item: item }));
+        return created(normalizeRole(item));
+      }
+
       if (method === 'PUT' && id) {
-        if (!ctx.permissions.has('manage_roles')) return forbidden();
         const existing = await ddb.send(new GetCommand({ TableName: TABLES.roles, Key: { roleId: id } }));
         if (!existing.Item) return notFound('Role not found');
-        const updated = { ...existing.Item, ...body, roleId: id };
+        const patch = { ...body };
+        if (patch.roleName) { patch.name = patch.roleName; delete patch.roleName; }
+        if (typeof patch.isSystemRole !== 'undefined') { patch.isSystem = !!patch.isSystemRole; delete patch.isSystemRole; }
+        const updated = { ...existing.Item, ...patch, roleId: id, updatedBy: ctx.email, updatedAt: new Date().toISOString() };
         await ddb.send(new PutCommand({ TableName: TABLES.roles, Item: updated }));
         return ok(normalizeRole(updated));
+      }
+
+      if (method === 'DELETE' && id) {
+        const existing = await ddb.send(new GetCommand({ TableName: TABLES.roles, Key: { roleId: id } }));
+        if (!existing.Item) return notFound('Role not found');
+        if (existing.Item.isSystem) return forbidden('System roles cannot be deleted');
+        await ddb.send(new DeleteCommand({ TableName: TABLES.roles, Key: { roleId: id } }));
+        return ok({ deleted: true, roleId: id });
       }
     }
 
