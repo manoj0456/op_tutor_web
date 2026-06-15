@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 40" width="180" height="40">
+  <rect x="2" y="2" width="36" height="36" rx="8" fill="#4F46E5"/>
+  <text x="20" y="26" font-family="Arial,sans-serif" font-size="22" font-weight="bold" fill="#FACC15" text-anchor="middle">O</text>
+  <text x="52" y="28" font-family="Arial,sans-serif" font-size="20" font-weight="bold" fill="#1E1B4B">Op</text>
+  <text x="80" y="28" font-family="Arial,sans-serif" font-size="20" font-weight="bold" fill="#4F46E5">Tutor</text>
+</svg>

@@ -8,9 +8,9 @@ export const metadata: Metadata = {
   description: 'Learn technology, AI, math, science and more with live classes and recorded courses.',
   keywords: ['online tutoring', 'AI learning', 'live classes', 'technology education'],
   icons: {
-    icon: 'https://optutor-com.s3.us-east-2.amazonaws.com/logos/logo-icon.png',
-    shortcut: 'https://optutor-com.s3.us-east-2.amazonaws.com/logos/logo-icon.png',
-    apple: 'https://optutor-com.s3.us-east-2.amazonaws.com/logos/logo-icon.png',
+    icon: '/logos/logo-icon.svg',
+    shortcut: '/logos/logo-icon.svg',
+    apple: '/logos/logo-icon.svg',
   },
 }
 
