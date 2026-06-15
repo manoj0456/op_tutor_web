@@ -589,6 +589,27 @@ export async function handler(event) {
         return ok({ success: true });
       }
 
+      // ── POST /admin/users/{userId}/reset-password – force temp password ──
+      const resetPasswordMatch = method === 'POST' && path.match(/^\/admin\/users\/([^/]+)\/reset-password$/);
+      if (resetPasswordMatch) {
+        const ctx = await getCallerContext(event);
+        if (!ctx.email) return unauthorized();
+        if (!ctx.permissions.has('promote_admins')) return forbidden('Only super admins can reset passwords');
+        const { temporaryPassword } = JSON.parse(body);
+        if (!temporaryPassword) return badRequest('temporaryPassword is required');
+        const { CognitoIdentityProviderClient, AdminSetUserPasswordCommand } = await import('@aws-sdk/client-cognito-identity-provider');
+        const cognitoClient = new CognitoIdentityProviderClient({});
+        const userPoolId = process.env.COGNITO_USER_POOL_ID;
+        const targetUserId = decodeURIComponent(resetPasswordMatch[1]);
+        await cognitoClient.send(new AdminSetUserPasswordCommand({
+          UserPoolId: userPoolId,
+          Username: targetUserId,
+          Password: temporaryPassword,
+          Permanent: false,
+        }));
+        return ok({ success: true });
+      }
+
     return notFound('Unknown resource: ' + resource);
   } catch (err) {
     console.error('Handler error:', err);
