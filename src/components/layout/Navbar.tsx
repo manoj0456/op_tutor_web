@@ -17,7 +17,7 @@ export function Navbar() {
   return (
     <nav className="border-b bg-white sticky top-0 z-50">
       <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-        <Link href="/"><img src="/logos/logo-brand.svg" alt="OpTutor" className="h-10 w-auto" /></Link>
+        <Link href="/"><img src="/logos/logo-brand.png" alt="OpTutor" className="h-10 w-auto" /></Link>
         <div className="flex items-center gap-6">
           <Link href="/courses" className="text-sm text-gray-600 hover:text-primary-600 transition">Courses</Link>
           <Link href="/live" className="text-sm text-gray-600 hover:text-primary-600 transition">Live</Link>
