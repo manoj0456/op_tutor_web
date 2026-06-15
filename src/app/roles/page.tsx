@@ -377,7 +377,7 @@ function ResetPasswordModal({ userName, onClose, onConfirm }: ResetPasswordModal
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function AdminRolesPage() {
-  const { getIdToken } = useAuth()
+  const { getIdToken, user } = useAuth()
   const { isSuperAdmin, userRole, loaded } = usePermissions()
   const router = useRouter()
 
@@ -396,10 +396,16 @@ export default function AdminRolesPage() {
   const [showAddStudent, setShowAddStudent]   = useState(false)
   const [resetTarget, setResetTarget] = useState<{ userId: string; name: string } | null>(null)
 
-  // Only ADMIN and SUPER_ADMIN can access this page
+  // Only ADMIN and SUPER_ADMIN can access this page.
+  // Guard against the auth race condition: AuthContext initialises `user` as
+  // `undefined` (loading) before the Cognito session resolves. PermissionContext
+  // sees !user and immediately sets loaded=true with userRole=null, making
+  // canManageEmployees false. We must not redirect until auth has settled.
   useEffect(() => {
-    if (loaded && !canManageEmployees) router.replace('/dashboard')
-  }, [loaded, canManageEmployees, router])
+    if (!loaded) return
+    if (user === undefined) return   // auth still initialising — wait
+    if (!canManageEmployees) router.replace('/')
+  }, [loaded, canManageEmployees, router, user])
 
   const fetchRoles = useCallback(async () => {
     setLoadingRoles(true)
