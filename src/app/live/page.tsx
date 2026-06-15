@@ -60,6 +60,7 @@ function normalizeSession(s: any): LiveSession {
     providerVideoId: s.providerVideoId || parsed?.providerVideoId || '',
     embedUrl: s.embedUrl || parsed?.embedUrl || '',
     youtubeUrl: ytUrl,
+    isPaid: !!s.isPaid,
   }
 }
 
@@ -139,7 +140,7 @@ function CountdownTimer({ scheduledAt }: { scheduledAt: string }) {
 }
 
 // ── Session card ───────────────────────────────────────────────
-function SessionCard({ session, onClick }: { session: LiveSession; onClick: () => void }) {
+function SessionCard({ session, onClick, locked }: { session: LiveSession; onClick: () => void; locked?: boolean }) {
   const thumb = getSessionThumbnail(session)
   const isLive = session.status === 'LIVE'
   const isUpcoming = session.status === 'UPCOMING'
@@ -162,6 +163,11 @@ function SessionCard({ session, onClick }: { session: LiveSession; onClick: () =
               <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
             </div>
           )}
+          {locked && (
+            <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+              <span className="text-white text-lg">🔒</span>
+            </div>
+          )}
         </div>
 
         <div className="flex-1 min-w-0">
@@ -169,7 +175,10 @@ function SessionCard({ session, onClick }: { session: LiveSession; onClick: () =
             <h3 className="font-semibold text-gray-900 group-hover:text-primary-600 transition text-sm line-clamp-2">
               {session.title}
             </h3>
-            <StatusBadge status={session.status} />
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${session.isPaid ? 'bg-orange-500 text-white' : 'bg-green-500 text-white'}`}>{session.isPaid ? 'PAID' : 'FREE'}</span>
+              <StatusBadge status={session.status} />
+            </div>
           </div>
           {session.instructorName && (
             <p className="text-xs text-gray-500">Instructor: {session.instructorName}</p>
@@ -183,6 +192,15 @@ function SessionCard({ session, onClick }: { session: LiveSession; onClick: () =
             <p className="text-xs text-gray-500 mt-1 line-clamp-1">{session.shortDescription}</p>
           )}
           {isUpcoming && <CountdownTimer scheduledAt={session.scheduledAt} />}
+          {locked && (
+            <a
+              href="/signup"
+              onClick={e => e.stopPropagation()}
+              className="inline-block mt-2 px-3 py-1 bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold rounded-full transition"
+            >
+              Sign up to access
+            </a>
+          )}
         </div>
       </div>
     </button>
@@ -260,8 +278,8 @@ function SessionDetail({ session, onBack }: { session: LiveSession; onBack: () =
 }
 
 // ── Section component ──────────────────────────────────────────
-function Section({ title, sessions, onSelect, emptyMsg }: {
-  title: React.ReactNode; sessions: LiveSession[]; onSelect: (s: LiveSession) => void; emptyMsg: string
+function Section({ title, sessions, onSelect, emptyMsg, locked }: {
+  title: React.ReactNode; sessions: LiveSession[]; onSelect: (s: LiveSession) => void; emptyMsg: string; locked: (s: LiveSession) => boolean
 }) {
   if (sessions.length === 0) return (
     <div className="mb-8">
@@ -273,7 +291,7 @@ function Section({ title, sessions, onSelect, emptyMsg }: {
     <div className="mb-10">
       <h2 className="text-lg font-bold text-gray-900 mb-3">{title}</h2>
       <div className="space-y-3">
-        {sessions.map(s => <SessionCard key={s.sessionId} session={s} onClick={() => onSelect(s)} />)}
+        {sessions.map(s => { const lk = locked(s); return <SessionCard key={s.sessionId} session={s} locked={lk} onClick={() => { if (!lk) onSelect(s) }} /> })}
       </div>
     </div>
   )
@@ -281,7 +299,7 @@ function Section({ title, sessions, onSelect, emptyMsg }: {
 
 // ── Main page ─────────────────────────────────────────────────
 export default function LivePage() {
-  const { getIdToken } = useAuth()
+  const { getIdToken, user } = useAuth()
   const { loaded } = usePermissions()
 
   const [sessions, setSessions] = useState<LiveSession[]>([])
@@ -354,7 +372,7 @@ export default function LivePage() {
                 Live Now
               </h2>
               <div className="space-y-3">
-                {liveSessions.map(s => <SessionCard key={s.sessionId} session={s} onClick={() => setSelected(s)} />)}
+                {liveSessions.map(s => { const locked = s.isPaid && !user; return <SessionCard key={s.sessionId} session={s} locked={locked} onClick={() => { if (!locked) setSelected(s) }} /> })}
               </div>
             </div>
           )}
@@ -364,6 +382,7 @@ export default function LivePage() {
             sessions={upcoming}
             onSelect={setSelected}
             emptyMsg="No upcoming sessions scheduled."
+            locked={s => s.isPaid && !user}
           />
 
           <Section
@@ -371,6 +390,7 @@ export default function LivePage() {
             sessions={past}
             onSelect={setSelected}
             emptyMsg="No past sessions yet."
+            locked={s => s.isPaid && !user}
           />
         </>
       )}

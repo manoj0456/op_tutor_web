@@ -7,7 +7,7 @@ const ddb    = DynamoDBDocumentClient.from(client);
 const roles = [
   {
     roleId: 'SUPER_ADMIN', name: 'Super Admin',
-    description: 'Full platform access — can manage roles, users, and all content',
+    description: 'Full platform access â can manage roles, users, and all content',
     permissions: ['manage_roles', 'promote_admins', 'manage_courses', 'view_content', 'manage_users', 'view_reports'],
     isSystem: true, createdBy: 'system', createdAt: '2024-01-01T00:00:00.000Z',
   },
