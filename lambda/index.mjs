@@ -142,7 +142,7 @@ function extractEmail(event) {
   } catch { return null; }
 }
 
-// ââ YouTube URL parser âââââââââââââââââââââââââââââââââââââââââ
+// ── YouTube URL parser ─────────────────────────────────────────
 function parseYouTubeUrl(url) {
   if (!url) return null;
   const patterns = [
@@ -158,7 +158,7 @@ function parseYouTubeUrl(url) {
   return null;
 }
 
-// ââ Get caller email + permissions âââââââââââââââââââââââââââââ
+// ── Get caller email + permissions ─────────────────────────────
 async function getCallerContext(event) {
   const email = extractEmail(event);
   if (!email) return { email: null, roleRecord: null, permissions: new Set() };
@@ -177,7 +177,7 @@ async function getCallerContext(event) {
   }
 }
 
-// ââ Normalize video object (handles old + new shapes) âââââââââ
+// ── Normalize video object (handles old + new shapes) ─────────
 function normalizeVideo(v, index) {
   const ytUrl = v.youtubeUrl || '';
   const parsed = parseYouTubeUrl(ytUrl);
@@ -209,7 +209,7 @@ export async function handler(event) {
   const body = parseBody(event);
 
   try {
-    // ââ Roles ââââââââââââââââââââââââââââââââââââââââââââââââââ
+    // ── Roles ──────────────────────────────────────────────────
     if (resource === 'roles') {
       if (method === 'GET' && !id) return ok((await scanAll(TABLES.roles)).map(normalizeRole));
       const ctx = await getCallerContext(event);
@@ -224,7 +224,7 @@ export async function handler(event) {
       }
     }
 
-    // ââ Users ââââââââââââââââââââââââââââââââââââââââââââââââââ
+    // ── Users ──────────────────────────────────────────────────
     if (resource === 'users') {
       const ctx = await getCallerContext(event);
       if (!ctx.email) return unauthorized();
@@ -268,7 +268,7 @@ export async function handler(event) {
       }
     }
 
-    // ââ Role Requests ââââââââââââââââââââââââââââââââââââââââââ
+    // ── Role Requests ──────────────────────────────────────────
     if (resource === 'role-requests') {
       if (method === 'POST') {
         const { email, name, requestedRole } = body;
@@ -287,7 +287,7 @@ export async function handler(event) {
       if (method === 'GET') return ok(await scanAll(TABLES.roleRequests));
     }
 
-    // ââ Courses ââââââââââââââââââââââââââââââââââââââââââââââââ
+    // ── Courses ────────────────────────────────────────────────
     if (resource === 'courses') {
       if (method === 'GET' && !id) {
         const ctx = await getCallerContext(event);
@@ -373,7 +373,7 @@ export async function handler(event) {
       }
     }
 
-    // ââ Live Sessions ââââââââââââââââââââââââââââââââââââââââââ
+    // ── Live Sessions ──────────────────────────────────────────
     if (resource === 'live-sessions') {
       if (method === 'GET' && !id) {
         const all = await scanAll(TABLES.liveSessions);
@@ -458,7 +458,7 @@ export async function handler(event) {
     }
 
 
-    // ââ Students (self-service signup profiles) ââââââââââââââââ
+    // ── Students (self-service signup profiles) ────────────────
     if (resource === 'students') {
       // Public self-registration: store profile after Cognito verification
       if (method === 'POST' && !id) {
