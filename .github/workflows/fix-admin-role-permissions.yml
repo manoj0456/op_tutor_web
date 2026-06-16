@@ -20,7 +20,8 @@ jobs:
           aws dynamodb update-item \
             --table-name OpTutor-Roles \
             --key '{"roleId":{"S":"ADMIN"}}' \
-            --update-expression "SET permissions = :p" \
+            --update-expression "SET #p = :p" \
+            --expression-attribute-names '{"#p":"permissions"}' \
             --expression-attribute-values '{":p":{"L":[{"S":"view_courses"},{"S":"view_live"},{"S":"manage_courses"},{"S":"view_content"},{"S":"manage_users"},{"S":"view_reports"}]}}'
           echo "Fix applied"
 
