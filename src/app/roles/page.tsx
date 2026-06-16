@@ -476,8 +476,10 @@ export default function AdminRolesPage() {
   const [resetTarget, setResetTarget]         = useState<{ userId: string; name: string } | null>(null)
 
   useEffect(() => {
-    if (loaded && !canManageEmployees) router.replace('/dashboard')
-  }, [loaded, canManageEmployees, router])
+    if (!loaded) return
+    if (userRole === null) return
+    if (!canManageEmployees) router.replace("/")
+  }, [loaded, canManageEmployees, router, userRole])
 
   const fetchRoles = useCallback(async () => {
     setLoadingRoles(true); setError(null)
