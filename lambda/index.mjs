@@ -11,7 +11,7 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import {
   CognitoIdentityProviderClient,
   AdminCreateUserCommand,
-  AdminAddUserToGroupCommand,
+  AdminAddUserToGroupCommand,h
   AdminRemoveUserFromGroupCommand,
   AdminListGroupsForUserCommand,
   AdminDeleteUserCommand,
@@ -727,7 +727,7 @@ export async function handler(event) {
         const ctx = await getCallerContext(event);
         if (!ctx.email) return unauthorized();
         if (!ctx.permissions.has('promote_admins')) return forbidden('Only super admins can reset passwords');
-        const { temporaryPassword } = JSON.parse(body);
+        const { temporaryPassword } = body;
         if (!temporaryPassword) return badRequest('temporaryPassword is required');
         const { CognitoIdentityProviderClient, AdminSetUserPasswordCommand } = await import('@aws-sdk/client-cognito-identity-provider');
         const cognitoClient = new CognitoIdentityProviderClient({});
