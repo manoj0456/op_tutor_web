@@ -44,10 +44,25 @@ interface Employee {
 interface Role {
   roleId: string
   name: string
+  description?: string
   permissions: string[]
 }
 
 type Tab = 'students' | 'employees' | 'roles'
+
+// ── Permission definitions ────────────────────────────────────────────────────
+const PAGE_PERMISSIONS = [
+  { id: 'view_courses',  label: 'Courses' },
+  { id: 'view_live',     label: 'Live Sessions' },
+  { id: 'manage_courses', label: 'Content Management' },
+  { id: 'manage_roles',  label: 'Roles & Permissions' },
+] as const
+
+const ACTION_PERMISSIONS = [
+  { id: 'manage_employees', label: 'Add / Edit / Delete Employees' },
+  { id: 'manage_students',  label: 'Add Student' },
+  { id: 'promote_admins',   label: 'Reset Password / Change User Roles' },
+] as const
 
 // ── Role badge helper ────────────────────────────────────────────────────────
 function RoleBadge({ role }: { role: string }) {
@@ -69,6 +84,124 @@ function StatusBadge({ status }: { status?: string }) {
     <span className={`inline-block text-xs px-2 py-0.5 rounded-full font-medium ${isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
       {isActive ? 'Active' : 'Inactive'}
     </span>
+  )
+}
+
+// ── Add / Edit Role Modal ────────────────────────────────────────────────────
+interface RoleModalProps {
+  initial?: Role
+  onClose: () => void
+  onSubmit: (data: { name: string; description: string; permissions: string[] }) => Promise<void>
+}
+
+function RoleModal({ initial, onClose, onSubmit }: RoleModalProps) {
+  const [name, setName]               = useState(initial?.name ?? '')
+  const [description, setDescription] = useState(initial?.description ?? '')
+  const [selectedPerms, setSelectedPerms] = useState<Set<string>>(
+    new Set(initial?.permissions ?? [])
+  )
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError]           = useState<string | null>(null)
+
+  const toggle = (id: string) => {
+    setSelectedPerms(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!name.trim()) { setError('Role name is required'); return }
+    setSubmitting(true); setError(null)
+    try {
+      await onSubmit({ name: name.trim(), description: description.trim(), permissions: Array.from(selectedPerms) })
+      onClose()
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to save role')
+    } finally { setSubmitting(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">{initial ? 'Edit Role' : 'Add Role'}</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none" aria-label="Close">&times;</button>
+        </div>
+
+        {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{error}</div>}
+
+        <form onSubmit={handleSubmit} className="space-y-5">
+          {/* Name */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Role Name *</label>
+            <input
+              type="text" value={name} onChange={e => setName(e.target.value)}
+              placeholder="e.g. Content Manager"
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+
+          {/* Description */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+            <input
+              type="text" value={description} onChange={e => setDescription(e.target.value)}
+              placeholder="Brief description of this role"
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+
+          {/* Pages access */}
+          <div>
+            <p className="text-sm font-medium text-gray-700 mb-2">Pages Access</p>
+            <div className="space-y-2">
+              {PAGE_PERMISSIONS.map(p => (
+                <label key={p.id} className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={selectedPerms.has(p.id)}
+                    onChange={() => toggle(p.id)}
+                    className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  />
+                  <span className="text-sm text-gray-700">{p.label}</span>
+                  <span className="text-xs text-gray-400">({p.id})</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div>
+            <p className="text-sm font-medium text-gray-700 mb-2">Actions</p>
+            <div className="space-y-2">
+              {ACTION_PERMISSIONS.map(p => (
+                <label key={p.id} className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={selectedPerms.has(p.id)}
+                    onChange={() => toggle(p.id)}
+                    className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  />
+                  <span className="text-sm text-gray-700">{p.label}</span>
+                  <span className="text-xs text-gray-400">({p.id})</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-2">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50">Cancel</button>
+            <button type="submit" disabled={submitting}
+              className="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded hover:bg-primary-700 disabled:opacity-50">
+              {submitting ? 'Saving…' : (initial ? 'Save Changes' : 'Create Role')}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   )
 }
 
@@ -99,8 +232,8 @@ function AddEmployeeModal({ onClose, onSubmit }: AddEmployeeModalProps) {
     try {
       await onSubmit({ fullName: fullName.trim(), email: email.trim(), phone: phone.trim(), role, department: department.trim(), hireDate, status })
       onClose()
-    } catch (err: any) {
-      setError(err.message ?? 'Failed to create employee')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to create employee')
     } finally { setSubmitting(false) }
   }
 
@@ -190,8 +323,8 @@ function EditEmployeeModal({ employee, onClose, onSubmit }: EditEmployeeModalPro
     try {
       await onSubmit(employee.userId, { fullName: fullName.trim(), phone: phone.trim(), department: department.trim(), role, status })
       onClose()
-    } catch (err: any) {
-      setError(err.message ?? 'Failed to update employee')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to update employee')
     } finally { setSubmitting(false) }
   }
 
@@ -266,8 +399,8 @@ function DeleteEmployeeModal({ employee, onClose, onConfirm }: DeleteEmployeeMod
     try {
       await onConfirm(employee.userId)
       onClose()
-    } catch (err: any) {
-      setError(err.message ?? 'Failed to delete employee')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to delete employee')
     } finally { setDeleting(false) }
   }
 
@@ -315,8 +448,8 @@ function AddStudentModal({ onClose, onSubmit }: AddStudentModalProps) {
     try {
       await onSubmit(fullName.trim(), email.trim(), phone.trim(), dob)
       onClose()
-    } catch (err: any) {
-      setError(err.message ?? 'Failed to create student')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to create student')
     } finally { setSubmitting(false) }
   }
 
@@ -399,7 +532,7 @@ function ResetPasswordModal({ userName, onClose, onConfirm }: ResetPasswordModal
     if (!password.trim()) { setError('Password cannot be empty'); return }
     setSubmitting(true); setError(null)
     try { await onConfirm(password.trim()); onClose() }
-    catch (err: any) { setError(err.message ?? 'Failed to reset password') }
+    catch (err: unknown) { setError(err instanceof Error ? err.message : 'Failed to reset password') }
     finally { setSubmitting(false) }
   }
 
@@ -444,17 +577,18 @@ function ResetPasswordModal({ userName, onClose, onConfirm }: ResetPasswordModal
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function AdminRolesPage() {
   const { getIdToken } = useAuth()
-  const { isSuperAdmin, userRole, loaded } = usePermissions()
+  const { hasPermission, isSuperAdmin, userRole, loaded } = usePermissions()
   const router = useRouter()
 
-  const isAdmin = userRole?.roleId === 'ADMIN'
-  const canManageEmployees = isSuperAdmin || isAdmin
+  const canManageEmployees = hasPermission('manage_employees')
+  const canManageRoles     = hasPermission('manage_roles')
 
   const [activeTab, setActiveTab] = useState<Tab>('students')
 
   // Roles
   const [roles, setRoles]               = useState<Role[]>([])
   const [loadingRoles, setLoadingRoles] = useState(false)
+  const [roleModalTarget, setRoleModalTarget] = useState<Role | null | 'new'>(null)
 
   // Students (Cognito list)
   const [users, setUsers]               = useState<CognitoUser[]>([])
@@ -476,11 +610,12 @@ export default function AdminRolesPage() {
   const [resetTarget, setResetTarget]         = useState<{ userId: string; name: string } | null>(null)
   const [createdEmpPassword, setCreatedEmpPassword] = useState<{ name: string; email: string; password: string } | null>(null)
 
+  // Guard: require manage_roles permission
   useEffect(() => {
     if (!loaded) return
     if (userRole === null) return
-    if (!canManageEmployees) router.replace("/")
-  }, [loaded, canManageEmployees, router, userRole])
+    if (!canManageRoles) router.replace('/')
+  }, [loaded, canManageRoles, router, userRole])
 
   const fetchRoles = useCallback(async () => {
     setLoadingRoles(true); setError(null)
@@ -488,7 +623,7 @@ export default function AdminRolesPage() {
       const token = await getIdToken()
       const data = await apiFetch('/roles', token)
       setRoles(data ?? [])
-    } catch (e: any) { setError(e.message) }
+    } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Failed to load roles') }
     finally { setLoadingRoles(false) }
   }, [getIdToken])
 
@@ -498,7 +633,7 @@ export default function AdminRolesPage() {
       const token = await getIdToken()
       const data = await apiFetch('/admin/users', token)
       setUsers(data.users ?? [])
-    } catch (e: any) { setError(e.message) }
+    } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Failed to load users') }
     finally { setLoadingUsers(false) }
   }, [getIdToken])
 
@@ -508,19 +643,34 @@ export default function AdminRolesPage() {
       const token = await getIdToken()
       const data = await apiFetch('/employees', token)
       setEmployees(Array.isArray(data) ? data : [])
-    } catch (e: any) { setError(e.message) }
+    } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Failed to load employees') }
     finally { setLoadingEmployees(false) }
   }, [getIdToken])
 
   useEffect(() => {
-    if (!loaded || !canManageEmployees) return
-    if (activeTab === 'roles')     fetchRoles()
+    if (!loaded || !canManageRoles) return
+    if (activeTab === 'roles')          fetchRoles()
     else if (activeTab === 'employees') fetchEmployees()
-    else fetchUsers()
-  }, [activeTab, loaded, canManageEmployees, fetchRoles, fetchUsers, fetchEmployees])
+    else                                fetchUsers()
+  }, [activeTab, loaded, canManageRoles, fetchRoles, fetchUsers, fetchEmployees])
 
   const flash = (msg: string, ms = 3000) => {
     setSuccessMsg(msg); setTimeout(() => setSuccessMsg(null), ms)
+  }
+
+  // Role CRUD
+  const handleAddRole = async (data: { name: string; description: string; permissions: string[] }) => {
+    const token = await getIdToken()
+    await apiFetch('/roles', token, { method: 'POST', body: JSON.stringify({ name: data.name, description: data.description, permissions: data.permissions }) })
+    flash('Role created successfully')
+    fetchRoles()
+  }
+
+  const handleEditRole = async (roleId: string, data: { name: string; description: string; permissions: string[] }) => {
+    const token = await getIdToken()
+    await apiFetch(`/roles/${encodeURIComponent(roleId)}`, token, { method: 'PUT', body: JSON.stringify({ name: data.name, description: data.description, permissions: data.permissions }) })
+    flash('Role updated successfully')
+    fetchRoles()
   }
 
   const handleRoleChange = async (userId: string, newRole: string) => {
@@ -533,7 +683,7 @@ export default function AdminRolesPage() {
       })
       setUsers(prev => prev.map(u => u.userId === userId ? { ...u, groups: [newRole] } : u))
       flash('Role updated successfully')
-    } catch (e: any) { setError(e.message) }
+    } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Failed to update role') }
     finally { setUpdatingUserId(null) }
   }
 
@@ -593,7 +743,7 @@ export default function AdminRolesPage() {
   }
 
   if (!loaded) return <div className="p-8 text-center text-gray-500">Loading...</div>
-  if (!canManageEmployees) return null
+  if (!canManageRoles) return null
 
   const students = users.filter(u => u.groups.includes('STUDENT'))
 
@@ -605,6 +755,7 @@ export default function AdminRolesPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Temp password modal after employee creation */}
       {createdEmpPassword && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-lg shadow-lg w-full max-w-sm p-6">
@@ -615,33 +766,35 @@ export default function AdminRolesPage() {
             </p>
             <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded px-3 py-2 mb-4">
               <span className="flex-1 font-mono text-sm select-all">{createdEmpPassword.password}</span>
-              <button
-                onClick={() => { navigator.clipboard.writeText(createdEmpPassword.password) }}
-                className="text-xs px-2 py-1 bg-primary-600 text-white rounded hover:bg-primary-700"
-              >Copy</button>
+              <button onClick={() => { navigator.clipboard.writeText(createdEmpPassword.password) }}
+                className="text-xs px-2 py-1 bg-primary-600 text-white rounded hover:bg-primary-700">Copy</button>
             </div>
-            <button
-              onClick={() => setCreatedEmpPassword(null)}
-              className="w-full px-4 py-2 text-sm font-medium text-white bg-gray-700 rounded hover:bg-gray-800"
-            >Done</button>
+            <button onClick={() => setCreatedEmpPassword(null)}
+              className="w-full px-4 py-2 text-sm font-medium text-white bg-gray-700 rounded hover:bg-gray-800">Done</button>
           </div>
         </div>
       )}
-      {showAddEmployee && (
-        <AddEmployeeModal onClose={() => setShowAddEmployee(false)} onSubmit={handleAddEmployee} />
+
+      {/* Role modal (add or edit) */}
+      {roleModalTarget !== null && (
+        <RoleModal
+          initial={roleModalTarget === 'new' ? undefined : roleModalTarget}
+          onClose={() => setRoleModalTarget(null)}
+          onSubmit={async (data) => {
+            if (roleModalTarget === 'new') {
+              await handleAddRole(data)
+            } else {
+              await handleEditRole(roleModalTarget.roleId, data)
+            }
+          }}
+        />
       )}
-      {showAddStudent && (
-        <AddStudentModal onClose={() => setShowAddStudent(false)} onSubmit={handleAddStudent} />
-      )}
-      {editTarget && (
-        <EditEmployeeModal employee={editTarget} onClose={() => setEditTarget(null)} onSubmit={handleEditEmployee} />
-      )}
-      {deleteTarget && (
-        <DeleteEmployeeModal employee={deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={handleDeleteEmployee} />
-      )}
-      {resetTarget && (
-        <ResetPasswordModal userName={resetTarget.name} onClose={() => setResetTarget(null)} onConfirm={handleResetPassword} />
-      )}
+
+      {showAddEmployee && <AddEmployeeModal onClose={() => setShowAddEmployee(false)} onSubmit={handleAddEmployee} />}
+      {showAddStudent  && <AddStudentModal  onClose={() => setShowAddStudent(false)}  onSubmit={handleAddStudent}  />}
+      {editTarget   && <EditEmployeeModal   employee={editTarget}   onClose={() => setEditTarget(null)}   onSubmit={handleEditEmployee} />}
+      {deleteTarget && <DeleteEmployeeModal employee={deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={handleDeleteEmployee} />}
+      {resetTarget  && <ResetPasswordModal  userName={resetTarget.name} onClose={() => setResetTarget(null)} onConfirm={handleResetPassword} />}
 
       <div className="container mx-auto px-4 py-8 max-w-6xl">
         <div className="mb-6">
@@ -649,12 +802,8 @@ export default function AdminRolesPage() {
           <p className="text-gray-500 text-sm mt-1">Manage students, employees, and role permissions</p>
         </div>
 
-        {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{error}</div>
-        )}
-        {successMsg && (
-          <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded text-green-700 text-sm">{successMsg}</div>
-        )}
+        {error      && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{error}</div>}
+        {successMsg && <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded text-green-700 text-sm">{successMsg}</div>}
 
         {/* Tabs */}
         <div className="flex gap-1 mb-6 border-b border-gray-200">
@@ -679,10 +828,12 @@ export default function AdminRolesPage() {
               </h2>
               <div className="flex items-center gap-3">
                 <button onClick={fetchUsers} className="text-xs text-primary-600 hover:underline">Refresh</button>
-                <button onClick={() => setShowAddStudent(true)}
-                  className="px-3 py-1.5 text-sm font-medium text-white bg-green-600 rounded hover:bg-green-700 transition">
-                  + Add Student
-                </button>
+                {hasPermission('manage_students') && (
+                  <button onClick={() => setShowAddStudent(true)}
+                    className="px-3 py-1.5 text-sm font-medium text-white bg-green-600 rounded hover:bg-green-700 transition">
+                    + Add Student
+                  </button>
+                )}
                 {canManageEmployees && (
                   <button onClick={() => setShowAddEmployee(true)}
                     className="px-3 py-1.5 text-sm font-medium text-white bg-primary-600 rounded hover:bg-primary-700 transition">
@@ -734,7 +885,7 @@ export default function AdminRolesPage() {
           </div>
         )}
 
-        {/* ── Tab 2: Employees (DynamoDB) ─────────────────────────────────── */}
+        {/* ── Tab 2: Employees ────────────────────────────────────────────── */}
         {activeTab === 'employees' && (
           <div className="bg-white rounded-lg shadow-sm border border-gray-200">
             <div className="p-4 border-b flex items-center justify-between">
@@ -792,21 +943,14 @@ export default function AdminRolesPage() {
                         <td className="p-3"><StatusBadge status={emp.status} /></td>
                         <td className="p-3">
                           <div className="flex items-center gap-2">
-                            {/* Edit — visible to admins */}
                             {canManageEmployees && (
                               <button onClick={() => setEditTarget(emp)} title="Edit employee"
-                                className="text-gray-500 hover:text-primary-600 transition" aria-label="Edit">
-                                ✏️
-                              </button>
+                                className="text-gray-500 hover:text-primary-600 transition" aria-label="Edit">✏️</button>
                             )}
-                            {/* Delete — SUPER_ADMIN only */}
                             {isSuperAdmin && (
                               <button onClick={() => setDeleteTarget(emp)} title="Delete employee"
-                                className="text-gray-400 hover:text-red-600 transition" aria-label="Delete">
-                                🗑️
-                              </button>
+                                className="text-gray-400 hover:text-red-600 transition" aria-label="Delete">🗑️</button>
                             )}
-                            {/* Reset password — SUPER_ADMIN only, uses email as Cognito username */}
                             {isSuperAdmin && (
                               <button onClick={() => setResetTarget({ userId: emp.email, name: emp.fullName })} title="Reset password"
                                 className="text-amber-600 hover:text-amber-800 text-xs font-medium px-2 py-1 border border-amber-300 rounded hover:bg-amber-50 transition">
@@ -829,23 +973,44 @@ export default function AdminRolesPage() {
           <div className="bg-white rounded-lg shadow-sm border border-gray-200">
             <div className="p-4 border-b flex items-center justify-between">
               <h2 className="font-semibold text-gray-700">Roles</h2>
-              <button onClick={fetchRoles} className="text-xs text-primary-600 hover:underline">Refresh</button>
+              <div className="flex items-center gap-3">
+                <button onClick={fetchRoles} className="text-xs text-primary-600 hover:underline">Refresh</button>
+                <button onClick={() => setRoleModalTarget('new')}
+                  className="px-3 py-1.5 text-sm font-medium text-white bg-primary-600 rounded hover:bg-primary-700 transition">
+                  + Add Role
+                </button>
+              </div>
             </div>
             {loadingRoles ? (
               <div className="p-8 text-center text-gray-400">Loading roles...</div>
             ) : (
               <div className="divide-y">
                 {roles.length === 0 && (
-                  <div className="p-6 text-center text-gray-400">No roles defined yet.</div>
+                  <div className="p-6 text-center text-gray-400">No roles defined yet. Create one with the button above.</div>
                 )}
                 {roles.map(role => (
                   <div key={role.roleId} className="p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-medium text-gray-800">{role.name}</span>
-                      <span className="text-xs text-gray-400">{role.roleId}</span>
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-3">
+                        <span className="font-medium text-gray-800">{role.name}</span>
+                        {role.description && (
+                          <span className="text-sm text-gray-500">{role.description}</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-400">{role.roleId}</span>
+                        <button
+                          onClick={() => setRoleModalTarget(role)}
+                          title="Edit role"
+                          className="ml-2 text-gray-400 hover:text-primary-600 transition p-1 rounded hover:bg-gray-100"
+                          aria-label="Edit role"
+                        >
+                          ✏️
+                        </button>
+                      </div>
                     </div>
                     {role.permissions && role.permissions.length > 0 && (
-                      <div className="flex flex-wrap gap-1">
+                      <div className="flex flex-wrap gap-1 mt-2">
                         {role.permissions.map(p => (
                           <span key={p} className="bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded">{p}</span>
                         ))}
