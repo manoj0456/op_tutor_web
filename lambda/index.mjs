@@ -126,6 +126,20 @@ function parseBody(event) {
   catch { return {}; }
 }
 
+
+function generateTempPassword() {
+  const upper   = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const lower   = 'abcdefghjkmnpqrstuvwxyz';
+  const digits  = '23456789';
+  const special = '!@#$%';
+  const all     = upper + lower + digits + special;
+  let pwd = upper[Math.floor(Math.random()*upper.length)]
+          + lower[Math.floor(Math.random()*lower.length)]
+          + digits[Math.floor(Math.random()*digits.length)]
+          + special[Math.floor(Math.random()*special.length)];
+  for (let i = 4; i < 12; i++) pwd += all[Math.floor(Math.random()*all.length)];
+  return pwd.split('').sort(() => Math.random() - 0.5).join('');
+}
 function normalizeRole(role) {
   if (!role) return role;
   const p = role.permissions;
@@ -572,10 +586,12 @@ export async function handler(event) {
         };
         await ddb.send(new PutCommand({ TableName: TABLES.employees, Item: item }));
         // Create Cognito user + add to group (best-effort)
+        const temporaryPassword = generateTempPassword();
         try {
           await cognito.send(new AdminCreateUserCommand({
             UserPoolId: USER_POOL_ID,
             Username: email,
+            TemporaryPassword: temporaryPassword,
             UserAttributes: [
               { Name: 'email', Value: email },
               { Name: 'email_verified', Value: 'true' },
@@ -591,7 +607,7 @@ export async function handler(event) {
         } catch (cognitoErr) {
           console.error('Cognito create employee error (non-fatal):', cognitoErr.message);
         }
-        return created(item);
+        return created({ ...item, temporaryPassword });
       }
 
       if (method === 'PUT' && id) {

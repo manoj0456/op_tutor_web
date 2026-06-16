@@ -27,6 +27,7 @@ interface AuthContextValue {
   forgotPassword: (email: string) => Promise<void>
   confirmForgotPassword: (email: string, code: string, newPassword: string) => Promise<void>
   getIdToken: () => Promise<string>
+  completeNewPassword: (cognitoUser: CognitoUser, newPassword: string) => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -64,8 +65,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           resolve(session)
         },
         onFailure: reject,
-        newPasswordRequired: () =>
-          reject(new Error('Password change required. Contact your administrator.')),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        newPasswordRequired: (_userAttributes: any) =>
+          resolve({ newPasswordRequired: true as const, cognitoUser }),
       })
     })
   }
@@ -141,7 +143,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })
   }
 
-  function getIdToken(): Promise<string> {
+  function completeNewPassword(cognitoUser: CognitoUser, newPassword: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      cognitoUser.completeNewPasswordChallenge(newPassword, {}, {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        onSuccess: (session: any) => {
+          setUser(cognitoUser)
+          setUserEmail(session.getIdToken().decodePayload().email ?? '')
+          resolve()
+        },
+        onFailure: reject,
+      })
+    })
+  }
+
+    function getIdToken(): Promise<string> {
     return new Promise((resolve, reject) => {
       if (!userPool) return reject(new Error('Cognito not configured'))
       const cu = userPool.getCurrentUser()
@@ -155,7 +171,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, userEmail, signIn, signUp, confirmSignUp, resendConfirmationCode, signOut, forgotPassword, confirmForgotPassword, getIdToken }}>
+    <AuthContext.Provider value={{ user, userEmail, signIn, signUp, confirmSignUp, resendConfirmationCode, signOut, forgotPassword, confirmForgotPassword, getIdToken, completeNewPassword }}>
       {children}
     </AuthContext.Provider>
   )

@@ -6,6 +6,7 @@ import { z } from 'zod'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import toast from 'react-hot-toast'
+import type { CognitoUser } from 'amazon-cognito-identity-js'
 import { useAuth } from '@/context/AuthContext'
 
 const schema = z.object({
@@ -15,7 +16,7 @@ const schema = z.object({
 type FormData = z.infer<typeof schema>
 
 export function LoginForm() {
-  const { signIn, forgotPassword, confirmForgotPassword } = useAuth()
+  const { signIn, forgotPassword, confirmForgotPassword, completeNewPassword } = useAuth()
   const router = useRouter()
   const [showForgot, setShowForgot] = useState(false)
   const [forgotSent, setForgotSent] = useState(false)
@@ -23,6 +24,10 @@ export function LoginForm() {
   const [resetCode, setResetCode]   = useState('')
   const [newPwd, setNewPwd]         = useState('')
   const [resetting, setResetting]   = useState(false)
+  const [newPwdChallenge, setNewPwdChallenge] = useState<{ cognitoUser: CognitoUser } | null>(null)
+  const [challengeNewPwd, setChallengeNewPwd]     = useState('')
+  const [challengeConfirm, setChallengeConfirm]   = useState('')
+  const [challengeSubmitting, setChallengeSubmitting] = useState(false)
 
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -30,11 +35,31 @@ export function LoginForm() {
 
   const onSubmit = async (data: FormData) => {
     try {
-      await signIn(data.email, data.password)
+      const result = await signIn(data.email, data.password) as any
+      if (result && result.newPasswordRequired) {
+        setNewPwdChallenge({ cognitoUser: result.cognitoUser })
+        return
+      }
       toast.success('Signed in!')
       router.push('/')
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Sign-in failed')
+    }
+  }
+
+  const handleCompleteNewPassword = async () => {
+    if (!newPwdChallenge) return
+    if (challengeNewPwd.length < 8) { toast.error('Password must be at least 8 characters'); return }
+    if (challengeNewPwd !== challengeConfirm) { toast.error('Passwords do not match'); return }
+    setChallengeSubmitting(true)
+    try {
+      await completeNewPassword(newPwdChallenge.cognitoUser, challengeNewPwd)
+      toast.success('Password set! You are now signed in.')
+      router.push('/')
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to set password')
+    } finally {
+      setChallengeSubmitting(false)
     }
   }
 
@@ -61,6 +86,32 @@ export function LoginForm() {
     } finally {
       setResetting(false)
     }
+  }
+
+  if (newPwdChallenge) {
+    return (
+      <div className="bg-white rounded-2xl shadow-lg p-8">
+        <h1 className="text-2xl font-bold mb-2 text-center">Set a new password</h1>
+        <p className="text-sm text-gray-500 mb-6 text-center">Your account requires a new password before you can continue.</p>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">New password</label>
+            <input type="password" value={challengeNewPwd} onChange={e => setChallengeNewPwd(e.target.value)}
+              className="w-full border rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Confirm new password</label>
+            <input type="password" value={challengeConfirm} onChange={e => setChallengeConfirm(e.target.value)}
+              className="w-full border rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              onKeyDown={e => { if (e.key === 'Enter') handleCompleteNewPassword() }} />
+          </div>
+          <button onClick={handleCompleteNewPassword} disabled={challengeSubmitting}
+            className="w-full bg-primary-600 text-white py-2 rounded-lg font-semibold hover:bg-primary-700 disabled:opacity-50 transition">
+            {challengeSubmitting ? 'Saving...' : 'Set new password'}
+          </button>
+        </div>
+      </div>
+    )
   }
 
   if (showForgot) {
