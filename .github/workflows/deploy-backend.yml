@@ -70,7 +70,7 @@ jobs:
             --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole 2>/dev/null || true
 
           cat > /tmp/dynamo-policy.json << EOF
-          {"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["dynamodb:GetItem","dynamodb:PutItem","dynamodb:DeleteItem","dynamodb:Scan","dynamodb:Query","dynamodb:BatchWriteItem"],"Resource":"arn:aws:dynamodb:${AWS_REGION}:${ACCOUNT_ID}:table/OpTutor-*"}]}
+          {"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["dynamodb:GetItem","dynamodb:PutItem","dynamodb:DeleteItem","dynamodb:Scan","dynamodb:Query","dynamodb:BatchWriteItem"],"Resource":["arn:aws:dynamodb:${AWS_REGION}:${ACCOUNT_ID}:table/OpTutor-*","arn:aws:dynamodb:${AWS_REGION}:${ACCOUNT_ID}:table/optutor-*"]}]}
           EOF
           aws iam put-role-policy --role-name "$LAMBDA_ROLE_NAME" --policy-name OpTutorDynamoDB --policy-document file:///tmp/dynamo-policy.json
 
