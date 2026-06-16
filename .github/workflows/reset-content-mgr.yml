@@ -12,7 +12,10 @@ jobs:
           AWS_DEFAULT_REGION: us-east-2
           POOL_ID: ${{ secrets.NEXT_PUBLIC_COGNITO_USER_POOL_ID }}
         run: |
-          # Set permanent password
+          echo "# List existing groups"
+          aws cognito-idp list-groups --user-pool-id "$POOL_ID" --query "Groups[].GroupName" --output text
+
+          echo "# Set permanent password"
           aws cognito-idp admin-set-user-password \
             --user-pool-id "$POOL_ID" \
             --username "contentmgr@optutor.com" \
@@ -20,16 +23,21 @@ jobs:
             --permanent
           echo "Password set"
 
-          # Add to ADMIN group (ignore error if already member)
+          echo "# Create ADMIN group if not exists"
+          aws cognito-idp create-group \
+            --user-pool-id "$POOL_ID" \
+            --group-name "ADMIN" \
+            --description "Admin role group" || echo "Group may already exist"
+
+          echo "# Add user to ADMIN group"
           aws cognito-idp admin-add-user-to-group \
             --user-pool-id "$POOL_ID" \
             --username "contentmgr@optutor.com" \
-            --group-name "ADMIN" || echo "Already in group or group error"
+            --group-name "ADMIN"
           echo "Group assignment done"
 
-          # Verify group membership
+          echo "# Verify group membership"
           aws cognito-idp admin-list-groups-for-user \
             --user-pool-id "$POOL_ID" \
             --username "contentmgr@optutor.com" \
-            --query "Groups[].GroupName" \
-            --output text
+            --query "Groups[].GroupName" --output text
