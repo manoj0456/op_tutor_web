@@ -1,0 +1,31 @@
+name: Fix Admin Role Permissions (Issue 55)
+on:
+  workflow_dispatch:
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update Admin role permissions in DynamoDB
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-2
+        run: |
+          echo "Before fix:"
+          aws dynamodb get-item \
+            --table-name OpTutor-Roles \
+            --key '{"roleId":{"S":"ADMIN"}}' \
+            --query "Item.permissions" --output json
+
+          aws dynamodb update-item \
+            --table-name OpTutor-Roles \
+            --key '{"roleId":{"S":"ADMIN"}}' \
+            --update-expression "SET permissions = :p" \
+            --expression-attribute-values '{":p":{"L":[{"S":"view_courses"},{"S":"view_live"},{"S":"manage_courses"},{"S":"view_content"},{"S":"manage_users"},{"S":"view_reports"}]}}'
+          echo "Fix applied"
+
+          echo "After fix:"
+          aws dynamodb get-item \
+            --table-name OpTutor-Roles \
+            --key '{"roleId":{"S":"ADMIN"}}' \
+            --query "Item.permissions" --output json
