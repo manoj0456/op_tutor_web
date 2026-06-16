@@ -1,0 +1,20 @@
+name: Reset Content Manager Password
+on:
+  workflow_dispatch:
+jobs:
+  reset:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reset password
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-2
+          COGNITO_USER_POOL_ID: ${{ secrets.COGNITO_USER_POOL_ID }}
+        run: |
+          aws cognito-idp admin-set-user-password \
+            --user-pool-id "$COGNITO_USER_POOL_ID" \
+            --username "contentmgr@optutor.com" \
+            --password "Test@12345!" \
+            --permanent
+          echo "Password reset done"
