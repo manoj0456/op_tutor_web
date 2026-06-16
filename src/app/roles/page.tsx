@@ -29,6 +29,18 @@ interface CognitoUser {
   lastActive?: string
 }
 
+interface Employee {
+  userId: string
+  email: string
+  fullName: string
+  phone?: string
+  role: string
+  department?: string
+  hireDate?: string
+  status?: string
+  createdAt: string
+}
+
 interface Role {
   roleId: string
   name: string
@@ -37,102 +49,115 @@ interface Role {
 
 type Tab = 'students' | 'employees' | 'roles'
 
-const EMPLOYEE_GROUPS = ['SUPER_ADMIN', 'ADMIN', 'TEACHER']
+// ── Role badge helper ────────────────────────────────────────────────────────
+function RoleBadge({ role }: { role: string }) {
+  const colors: Record<string, string> = {
+    SUPER_ADMIN: 'bg-purple-100 text-purple-700',
+    ADMIN:       'bg-blue-100 text-blue-700',
+    TEACHER:     'bg-green-100 text-green-700',
+  }
+  return (
+    <span className={`inline-block text-xs px-2 py-0.5 rounded-full font-medium ${colors[role] ?? 'bg-gray-100 text-gray-600'}`}>
+      {role}
+    </span>
+  )
+}
+
+function StatusBadge({ status }: { status?: string }) {
+  const isActive = (status || 'active').toLowerCase() === 'active'
+  return (
+    <span className={`inline-block text-xs px-2 py-0.5 rounded-full font-medium ${isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+      {isActive ? 'Active' : 'Inactive'}
+    </span>
+  )
+}
 
 // ── Add Employee Modal ────────────────────────────────────────────────────────
 interface AddEmployeeModalProps {
   onClose: () => void
-  onSubmit: (name: string, email: string, role: string) => Promise<void>
+  onSubmit: (data: {
+    fullName: string; email: string; phone: string;
+    role: string; department: string; hireDate: string; status: string
+  }) => Promise<void>
 }
 
 function AddEmployeeModal({ onClose, onSubmit }: AddEmployeeModalProps) {
-  const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
-  const [role, setRole] = useState('ADMIN')
+  const [fullName, setFullName]     = useState('')
+  const [email, setEmail]           = useState('')
+  const [phone, setPhone]           = useState('')
+  const [role, setRole]             = useState('ADMIN')
+  const [department, setDepartment] = useState('')
+  const [hireDate, setHireDate]     = useState('')
+  const [status, setStatus]         = useState('active')
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError]           = useState<string | null>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!name.trim() || !email.trim()) {
-      setError('Name and email are required')
-      return
-    }
-    setSubmitting(true)
-    setError(null)
+    if (!fullName.trim() || !email.trim()) { setError('Name and email are required'); return }
+    setSubmitting(true); setError(null)
     try {
-      await onSubmit(name.trim(), email.trim(), role)
+      await onSubmit({ fullName: fullName.trim(), email: email.trim(), phone: phone.trim(), role, department: department.trim(), hireDate, status })
       onClose()
     } catch (err: any) {
       setError(err.message ?? 'Failed to create employee')
-    } finally {
-      setSubmitting(false)
-    }
+    } finally { setSubmitting(false) }
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-gray-900">Add Employee</h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 text-xl leading-none"
-            aria-label="Close"
-          >
-            &times;
-          </button>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none" aria-label="Close">&times;</button>
         </div>
-
-        {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{error}</div>
-        )}
-
+        {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{error}</div>}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-            <input
-              type="text"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder="Jane Smith"
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-            />
+            <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
+            <input type="text" value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Jane Smith"
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="jane@example.com"
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-            />
+            <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jane@example.com"
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-            <select
-              value={role}
-              onChange={e => setRole(e.target.value)}
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-            >
+            <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+            <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+1 555 000 0000"
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Role *</label>
+            <select value={role} onChange={e => setRole(e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500">
               <option value="ADMIN">Admin</option>
               <option value="TEACHER">Teacher</option>
             </select>
           </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
+            <input type="text" value={department} onChange={e => setDepartment(e.target.value)} placeholder="e.g. Engineering"
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Hire Date</label>
+            <input type="date" value={hireDate} onChange={e => setHireDate(e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+            <select value={status} onChange={e => setStatus(e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500">
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+          </div>
           <div className="flex justify-end gap-3 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded hover:bg-primary-700 disabled:opacity-50"
-            >
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50">Cancel</button>
+            <button type="submit" disabled={submitting}
+              className="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded hover:bg-primary-700 disabled:opacity-50">
               {submitting ? 'Creating...' : 'Create Employee'}
             </button>
           </div>
@@ -142,6 +167,132 @@ function AddEmployeeModal({ onClose, onSubmit }: AddEmployeeModalProps) {
   )
 }
 
+// ── Edit Employee Modal ───────────────────────────────────────────────────────
+interface EditEmployeeModalProps {
+  employee: Employee
+  onClose: () => void
+  onSubmit: (userId: string, data: Partial<Employee>) => Promise<void>
+}
+
+function EditEmployeeModal({ employee, onClose, onSubmit }: EditEmployeeModalProps) {
+  const [fullName, setFullName]     = useState(employee.fullName)
+  const [phone, setPhone]           = useState(employee.phone ?? '')
+  const [department, setDepartment] = useState(employee.department ?? '')
+  const [role, setRole]             = useState(employee.role)
+  const [status, setStatus]         = useState(employee.status ?? 'active')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError]           = useState<string | null>(null)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!fullName.trim()) { setError('Name is required'); return }
+    setSubmitting(true); setError(null)
+    try {
+      await onSubmit(employee.userId, { fullName: fullName.trim(), phone: phone.trim(), department: department.trim(), role, status })
+      onClose()
+    } catch (err: any) {
+      setError(err.message ?? 'Failed to update employee')
+    } finally { setSubmitting(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">Edit Employee</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none" aria-label="Close">&times;</button>
+        </div>
+        <p className="text-sm text-gray-500 mb-4">{employee.email}</p>
+        {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{error}</div>}
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
+            <input type="text" value={fullName} onChange={e => setFullName(e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+            <input type="tel" value={phone} onChange={e => setPhone(e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
+            <input type="text" value={department} onChange={e => setDepartment(e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+            <select value={role} onChange={e => setRole(e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500">
+              <option value="SUPER_ADMIN">Super Admin</option>
+              <option value="ADMIN">Admin</option>
+              <option value="TEACHER">Teacher</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+            <select value={status} onChange={e => setStatus(e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500">
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+          </div>
+          <div className="flex justify-end gap-3 pt-2">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50">Cancel</button>
+            <button type="submit" disabled={submitting}
+              className="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded hover:bg-primary-700 disabled:opacity-50">
+              {submitting ? 'Saving...' : 'Save Changes'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// ── Delete Employee Confirm Modal ─────────────────────────────────────────────
+interface DeleteEmployeeModalProps {
+  employee: Employee
+  onClose: () => void
+  onConfirm: (userId: string) => Promise<void>
+}
+
+function DeleteEmployeeModal({ employee, onClose, onConfirm }: DeleteEmployeeModalProps) {
+  const [deleting, setDeleting] = useState(false)
+  const [error, setError]       = useState<string | null>(null)
+
+  const handleConfirm = async () => {
+    setDeleting(true); setError(null)
+    try {
+      await onConfirm(employee.userId)
+      onClose()
+    } catch (err: any) {
+      setError(err.message ?? 'Failed to delete employee')
+    } finally { setDeleting(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-sm p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">Delete Employee</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none" aria-label="Close">&times;</button>
+        </div>
+        <p className="text-sm text-gray-600 mb-4">
+          Delete <span className="font-medium text-gray-800">{employee.fullName}</span>? This will remove them from the system.
+        </p>
+        {error && <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{error}</div>}
+        <div className="flex justify-end gap-3">
+          <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50">Cancel</button>
+          <button type="button" onClick={handleConfirm} disabled={deleting}
+            className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded hover:bg-red-700 disabled:opacity-50">
+            {deleting ? 'Deleting...' : 'Delete'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 // ── Add Student Modal ─────────────────────────────────────────────────────────
 interface AddStudentModalProps {
@@ -159,20 +310,14 @@ function AddStudentModal({ onClose, onSubmit }: AddStudentModalProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!fullName.trim() || !email.trim()) {
-      setError('Full name and email are required')
-      return
-    }
-    setSubmitting(true)
-    setError(null)
+    if (!fullName.trim() || !email.trim()) { setError('Full name and email are required'); return }
+    setSubmitting(true); setError(null)
     try {
       await onSubmit(fullName.trim(), email.trim(), phone.trim(), dob)
       onClose()
     } catch (err: any) {
       setError(err.message ?? 'Failed to create student')
-    } finally {
-      setSubmitting(false)
-    }
+    } finally { setSubmitting(false) }
   }
 
   return (
@@ -180,72 +325,34 @@ function AddStudentModal({ onClose, onSubmit }: AddStudentModalProps) {
       <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-gray-900">Add Student</h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 text-xl leading-none"
-            aria-label="Close"
-          >
-            &times;
-          </button>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none" aria-label="Close">&times;</button>
         </div>
-
-        {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{error}</div>
-        )}
-
+        {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{error}</div>}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-            <input
-              type="text"
-              value={fullName}
-              onChange={e => setFullName(e.target.value)}
-              placeholder="John Doe"
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-            />
+            <input type="text" value={fullName} onChange={e => setFullName(e.target.value)} placeholder="John Doe"
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="john@example.com"
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-            />
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="john@example.com"
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-            <input
-              type="tel"
-              value={phone}
-              onChange={e => setPhone(e.target.value)}
-              placeholder="+1 555 000 0000"
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-            />
+            <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+1 555 000 0000"
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth</label>
-            <input
-              type="date"
-              value={dob}
-              onChange={e => setDob(e.target.value)}
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-            />
+            <input type="date" value={dob} onChange={e => setDob(e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
           </div>
           <div className="flex justify-end gap-3 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded hover:bg-primary-700 disabled:opacity-50"
-            >
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50">Cancel</button>
+            <button type="submit" disabled={submitting}
+              className="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded hover:bg-primary-700 disabled:opacity-50">
               {submitting ? 'Creating...' : 'Create Student'}
             </button>
           </div>
@@ -255,7 +362,6 @@ function AddStudentModal({ onClose, onSubmit }: AddStudentModalProps) {
   )
 }
 
-
 // ── Reset Password Modal ──────────────────────────────────────────────────────
 function generateTempPassword(): string {
   const upper   = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
@@ -263,11 +369,9 @@ function generateTempPassword(): string {
   const digits  = '23456789'
   const symbols = '!@#$%^&*'
   const all     = upper + lower + digits + symbols
-  // Guarantee at least one of each required class
   const pick = (s: string) => s[Math.floor(Math.random() * s.length)]
   const base = [pick(upper), pick(lower), pick(digits), pick(symbols)]
   for (let i = 0; i < 6; i++) base.push(pick(all))
-  // Fisher-Yates shuffle
   for (let i = base.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [base[i], base[j]] = [base[j], base[i]]
@@ -282,30 +386,21 @@ interface ResetPasswordModalProps {
 }
 
 function ResetPasswordModal({ userName, onClose, onConfirm }: ResetPasswordModalProps) {
-  const [password, setPassword]   = useState(() => generateTempPassword())
-  const [copied, setCopied]       = useState(false)
+  const [password, setPassword]     = useState(() => generateTempPassword())
+  const [copied, setCopied]         = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError]         = useState<string | null>(null)
+  const [error, setError]           = useState<string | null>(null)
 
   const copyToClipboard = () => {
-    navigator.clipboard.writeText(password).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    })
+    navigator.clipboard.writeText(password).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) })
   }
 
   const handleConfirm = async () => {
     if (!password.trim()) { setError('Password cannot be empty'); return }
-    setSubmitting(true)
-    setError(null)
-    try {
-      await onConfirm(password.trim())
-      onClose()
-    } catch (err: any) {
-      setError(err.message ?? 'Failed to reset password')
-    } finally {
-      setSubmitting(false)
-    }
+    setSubmitting(true); setError(null)
+    try { await onConfirm(password.trim()); onClose() }
+    catch (err: any) { setError(err.message ?? 'Failed to reset password') }
+    finally { setSubmitting(false) }
   }
 
   return (
@@ -313,60 +408,31 @@ function ResetPasswordModal({ userName, onClose, onConfirm }: ResetPasswordModal
       <div className="bg-white rounded-lg shadow-lg w-full max-w-sm p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-gray-900">Reset Password</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none" aria-label="Close">
-            &times;
-          </button>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none" aria-label="Close">&times;</button>
         </div>
-
         <p className="text-sm text-gray-600 mb-4">
           Set a temporary password for <span className="font-medium text-gray-800">{userName}</span>.
           They will be required to change it on first login.
         </p>
-
-        {error && (
-          <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{error}</div>
-        )}
-
+        {error && <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{error}</div>}
         <div className="mb-4">
           <label className="block text-sm font-medium text-gray-700 mb-1">Temporary Password</label>
           <div className="flex gap-2">
-            <input
-              type="text"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-500"
-            />
-            <button
-              type="button"
-              onClick={copyToClipboard}
-              className="px-3 py-2 text-xs border border-gray-300 rounded hover:bg-gray-50 text-gray-600 whitespace-nowrap"
-            >
+            <input type="text" value={password} onChange={e => setPassword(e.target.value)}
+              className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-500" />
+            <button type="button" onClick={copyToClipboard}
+              className="px-3 py-2 text-xs border border-gray-300 rounded hover:bg-gray-50 text-gray-600 whitespace-nowrap">
               {copied ? '✓ Copied' : 'Copy'}
             </button>
           </div>
-          <button
-            type="button"
-            onClick={() => setPassword(generateTempPassword())}
-            className="mt-1 text-xs text-primary-600 hover:underline"
-          >
+          <button type="button" onClick={() => setPassword(generateTempPassword())} className="mt-1 text-xs text-primary-600 hover:underline">
             Regenerate
           </button>
         </div>
-
         <div className="flex justify-end gap-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleConfirm}
-            disabled={submitting}
-            className="px-4 py-2 text-sm font-medium text-white bg-amber-600 rounded hover:bg-amber-700 disabled:opacity-50"
-          >
+          <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50">Cancel</button>
+          <button type="button" onClick={handleConfirm} disabled={submitting}
+            className="px-4 py-2 text-sm font-medium text-white bg-amber-600 rounded hover:bg-amber-700 disabled:opacity-50">
             {submitting ? 'Resetting...' : 'Confirm Reset'}
           </button>
         </div>
@@ -377,7 +443,7 @@ function ResetPasswordModal({ userName, onClose, onConfirm }: ResetPasswordModal
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function AdminRolesPage() {
-  const { getIdToken, user } = useAuth()
+  const { getIdToken } = useAuth()
   const { isSuperAdmin, userRole, loaded } = usePermissions()
   const router = useRouter()
 
@@ -385,96 +451,117 @@ export default function AdminRolesPage() {
   const canManageEmployees = isSuperAdmin || isAdmin
 
   const [activeTab, setActiveTab] = useState<Tab>('students')
-  const [roles, setRoles] = useState<Role[]>([])
-  const [users, setUsers] = useState<CognitoUser[]>([])
+
+  // Roles
+  const [roles, setRoles]               = useState<Role[]>([])
   const [loadingRoles, setLoadingRoles] = useState(false)
+
+  // Students (Cognito list)
+  const [users, setUsers]               = useState<CognitoUser[]>([])
   const [loadingUsers, setLoadingUsers] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [updatingUserId, setUpdatingUserId] = useState<string | null>(null)
+
+  // Employees (DynamoDB)
+  const [employees, setEmployees]           = useState<Employee[]>([])
+  const [loadingEmployees, setLoadingEmployees] = useState(false)
+
+  const [error, setError]         = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
+  const [updatingUserId, setUpdatingUserId] = useState<string | null>(null)
+
+  // Modal state
   const [showAddEmployee, setShowAddEmployee] = useState(false)
   const [showAddStudent, setShowAddStudent]   = useState(false)
-  const [resetTarget, setResetTarget] = useState<{ userId: string; name: string } | null>(null)
+  const [editTarget, setEditTarget]           = useState<Employee | null>(null)
+  const [deleteTarget, setDeleteTarget]       = useState<Employee | null>(null)
+  const [resetTarget, setResetTarget]         = useState<{ userId: string; name: string } | null>(null)
 
-  // Only ADMIN and SUPER_ADMIN can access this page.
-  // Two-stage race condition guard:
-  // 1. AuthContext starts with user=undefined (loading); PermissionContext fires
-  //    early and sets loaded=true + userRole=null. Skip until user is known.
-  // 2. When auth resolves (user=CognitoUser), React fires THIS effect BEFORE
-  //    PermissionContext's effect resets loaded=false and re-fetches. Guard on
-  //    userRole===null to prevent redirecting during that inter-render gap.
   useEffect(() => {
-    if (!loaded) return
-    if (user === undefined) return   // auth still initialising
-    if (userRole === null) return    // permissions not yet resolved for current user
-    if (!canManageEmployees) router.replace('/')
-  }, [loaded, canManageEmployees, router, user, userRole])
+    if (loaded && !canManageEmployees) router.replace('/dashboard')
+  }, [loaded, canManageEmployees, router])
 
   const fetchRoles = useCallback(async () => {
-    setLoadingRoles(true)
-    setError(null)
+    setLoadingRoles(true); setError(null)
     try {
       const token = await getIdToken()
       const data = await apiFetch('/roles', token)
       setRoles(data ?? [])
-    } catch (e: any) {
-      setError(e.message)
-    } finally {
-      setLoadingRoles(false)
-    }
+    } catch (e: any) { setError(e.message) }
+    finally { setLoadingRoles(false) }
   }, [getIdToken])
 
   const fetchUsers = useCallback(async () => {
-    setLoadingUsers(true)
-    setError(null)
+    setLoadingUsers(true); setError(null)
     try {
       const token = await getIdToken()
       const data = await apiFetch('/admin/users', token)
       setUsers(data.users ?? [])
-    } catch (e: any) {
-      setError(e.message)
-    } finally {
-      setLoadingUsers(false)
-    }
+    } catch (e: any) { setError(e.message) }
+    finally { setLoadingUsers(false) }
+  }, [getIdToken])
+
+  const fetchEmployees = useCallback(async () => {
+    setLoadingEmployees(true); setError(null)
+    try {
+      const token = await getIdToken()
+      const data = await apiFetch('/employees', token)
+      setEmployees(Array.isArray(data) ? data : [])
+    } catch (e: any) { setError(e.message) }
+    finally { setLoadingEmployees(false) }
   }, [getIdToken])
 
   useEffect(() => {
     if (!loaded || !canManageEmployees) return
-    if (activeTab === 'roles') fetchRoles()
+    if (activeTab === 'roles')     fetchRoles()
+    else if (activeTab === 'employees') fetchEmployees()
     else fetchUsers()
-  }, [activeTab, loaded, canManageEmployees, fetchRoles, fetchUsers])
+  }, [activeTab, loaded, canManageEmployees, fetchRoles, fetchUsers, fetchEmployees])
+
+  const flash = (msg: string, ms = 3000) => {
+    setSuccessMsg(msg); setTimeout(() => setSuccessMsg(null), ms)
+  }
 
   const handleRoleChange = async (userId: string, newRole: string) => {
-    setUpdatingUserId(userId)
-    setError(null)
-    setSuccessMsg(null)
+    setUpdatingUserId(userId); setError(null)
     try {
       const token = await getIdToken()
       await apiFetch(`/admin/users/${encodeURIComponent(userId)}/role`, token, {
         method: 'PUT',
         body: JSON.stringify({ role: newRole }),
       })
-      setUsers(prev => prev.map(u =>
-        u.userId === userId ? { ...u, groups: [newRole] } : u
-      ))
-      setSuccessMsg('Role updated successfully')
-      setTimeout(() => setSuccessMsg(null), 3000)
-    } catch (e: any) {
-      setError(e.message)
-    } finally {
-      setUpdatingUserId(null)
-    }
+      setUsers(prev => prev.map(u => u.userId === userId ? { ...u, groups: [newRole] } : u))
+      flash('Role updated successfully')
+    } catch (e: any) { setError(e.message) }
+    finally { setUpdatingUserId(null) }
   }
 
-  const handleAddEmployee = async (name: string, email: string, role: string) => {
+  const handleAddEmployee = async (data: {
+    fullName: string; email: string; phone: string;
+    role: string; department: string; hireDate: string; status: string
+  }) => {
     const token = await getIdToken()
     await apiFetch('/employees', token, {
       method: 'POST',
-      body: JSON.stringify({ name, email, role }),
+      body: JSON.stringify(data),
     })
-    setSuccessMsg('Employee created successfully')
-    setTimeout(() => setSuccessMsg(null), 3000)
-    fetchUsers()
+    flash('Employee created successfully')
+    fetchEmployees()
+  }
+
+  const handleEditEmployee = async (userId: string, data: Partial<Employee>) => {
+    const token = await getIdToken()
+    await apiFetch(`/employees/${encodeURIComponent(userId)}`, token, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+    flash('Employee updated successfully')
+    fetchEmployees()
+  }
+
+  const handleDeleteEmployee = async (userId: string) => {
+    const token = await getIdToken()
+    await apiFetch(`/employees/${encodeURIComponent(userId)}`, token, { method: 'DELETE' })
+    flash('Employee deleted successfully')
+    fetchEmployees()
   }
 
   const handleAddStudent = async (fullName: string, email: string, phone: string, dateOfBirth: string) => {
@@ -484,8 +571,7 @@ export default function AdminRolesPage() {
       method: 'POST',
       body: JSON.stringify({ userId, email, fullName, phone, dateOfBirth }),
     })
-    setSuccessMsg('Student created successfully')
-    setTimeout(() => setSuccessMsg(null), 3000)
+    flash('Student created successfully')
     fetchUsers()
   }
 
@@ -496,15 +582,13 @@ export default function AdminRolesPage() {
       method: 'POST',
       body: JSON.stringify({ temporaryPassword }),
     })
-    setSuccessMsg('Temporary password set. Share it with the user.')
-    setTimeout(() => setSuccessMsg(null), 4000)
+    flash('Temporary password set. Share it with the user.', 4000)
   }
 
   if (!loaded) return <div className="p-8 text-center text-gray-500">Loading...</div>
   if (!canManageEmployees) return null
 
-  const students  = users.filter(u => u.groups.includes('STUDENT'))
-  const employees = users.filter(u => u.groups.some(g => EMPLOYEE_GROUPS.includes(g)))
+  const students = users.filter(u => u.groups.includes('STUDENT'))
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'students',  label: 'Students'  },
@@ -515,23 +599,19 @@ export default function AdminRolesPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       {showAddEmployee && (
-        <AddEmployeeModal
-          onClose={() => setShowAddEmployee(false)}
-          onSubmit={handleAddEmployee}
-        />
+        <AddEmployeeModal onClose={() => setShowAddEmployee(false)} onSubmit={handleAddEmployee} />
       )}
       {showAddStudent && (
-        <AddStudentModal
-          onClose={() => setShowAddStudent(false)}
-          onSubmit={handleAddStudent}
-        />
+        <AddStudentModal onClose={() => setShowAddStudent(false)} onSubmit={handleAddStudent} />
+      )}
+      {editTarget && (
+        <EditEmployeeModal employee={editTarget} onClose={() => setEditTarget(null)} onSubmit={handleEditEmployee} />
+      )}
+      {deleteTarget && (
+        <DeleteEmployeeModal employee={deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={handleDeleteEmployee} />
       )}
       {resetTarget && (
-        <ResetPasswordModal
-          userName={resetTarget.name}
-          onClose={() => setResetTarget(null)}
-          onConfirm={handleResetPassword}
-        />
+        <ResetPasswordModal userName={resetTarget.name} onClose={() => setResetTarget(null)} onConfirm={handleResetPassword} />
       )}
 
       <div className="container mx-auto px-4 py-8 max-w-6xl">
@@ -550,15 +630,12 @@ export default function AdminRolesPage() {
         {/* Tabs */}
         <div className="flex gap-1 mb-6 border-b border-gray-200">
           {tabs.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
               className={`px-4 py-2 text-sm font-medium border-b-2 transition -mb-px ${
                 activeTab === tab.id
                   ? 'border-primary-600 text-primary-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
+              }`}>
               {tab.label}
             </button>
           ))}
@@ -572,18 +649,19 @@ export default function AdminRolesPage() {
                 Students <span className="text-gray-400 font-normal text-sm">({students.length})</span>
               </h2>
               <div className="flex items-center gap-3">
-                <button onClick={fetchUsers} className="text-xs text-primary-600 hover:underline">
-                  Refresh
-                </button>
-                <button
-                  onClick={() => setShowAddStudent(true)}
-                  className="px-3 py-1.5 text-sm font-medium text-white bg-green-600 rounded hover:bg-green-700 transition"
-                >
+                <button onClick={fetchUsers} className="text-xs text-primary-600 hover:underline">Refresh</button>
+                <button onClick={() => setShowAddStudent(true)}
+                  className="px-3 py-1.5 text-sm font-medium text-white bg-green-600 rounded hover:bg-green-700 transition">
                   + Add Student
                 </button>
+                {canManageEmployees && (
+                  <button onClick={() => setShowAddEmployee(true)}
+                    className="px-3 py-1.5 text-sm font-medium text-white bg-primary-600 rounded hover:bg-primary-700 transition">
+                    + Add Employee
+                  </button>
+                )}
               </div>
             </div>
-
             {loadingUsers ? (
               <div className="p-8 text-center text-gray-400">Loading students...</div>
             ) : (
@@ -601,30 +679,19 @@ export default function AdminRolesPage() {
                   </thead>
                   <tbody>
                     {students.length === 0 && (
-                      <tr>
-                        <td colSpan={isSuperAdmin ? 6 : 5} className="p-4 text-center text-gray-400">No students found.</td>
-                      </tr>
+                      <tr><td colSpan={isSuperAdmin ? 6 : 5} className="p-4 text-center text-gray-400">No students found.</td></tr>
                     )}
                     {students.map(u => (
                       <tr key={u.userId} className="border-b hover:bg-gray-50 transition">
                         <td className="p-3 font-medium text-gray-800">{u.name}</td>
                         <td className="p-3 text-gray-600">{u.email}</td>
-                        <td className="p-3 text-gray-600 text-center">
-                          {u.enrolledCourses != null ? u.enrolledCourses : '—'}
-                        </td>
-                        <td className="p-3 text-gray-500 text-xs">
-                          {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—'}
-                        </td>
-                        <td className="p-3 text-gray-500 text-xs">
-                          {u.lastActive ? new Date(u.lastActive).toLocaleDateString() : '—'}
-                        </td>
+                        <td className="p-3 text-gray-600 text-center">{u.enrolledCourses != null ? u.enrolledCourses : '—'}</td>
+                        <td className="p-3 text-gray-500 text-xs">{u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—'}</td>
+                        <td className="p-3 text-gray-500 text-xs">{u.lastActive ? new Date(u.lastActive).toLocaleDateString() : '—'}</td>
                         {isSuperAdmin && (
                           <td className="p-3">
-                            <button
-                              onClick={() => setResetTarget({ userId: u.userId, name: u.name })}
-                              title="Reset password"
-                              className="text-amber-600 hover:text-amber-800 text-xs font-medium px-2 py-1 border border-amber-300 rounded hover:bg-amber-50 transition"
-                            >
+                            <button onClick={() => setResetTarget({ userId: u.userId, name: u.name })} title="Reset password"
+                              className="text-amber-600 hover:text-amber-800 text-xs font-medium px-2 py-1 border border-amber-300 rounded hover:bg-amber-50 transition">
                               🔑 Reset
                             </button>
                           </td>
@@ -638,7 +705,7 @@ export default function AdminRolesPage() {
           </div>
         )}
 
-        {/* ── Tab 2: Employees ────────────────────────────────────────────── */}
+        {/* ── Tab 2: Employees (DynamoDB) ─────────────────────────────────── */}
         {activeTab === 'employees' && (
           <div className="bg-white rounded-lg shadow-sm border border-gray-200">
             <div className="p-4 border-b flex items-center justify-between">
@@ -646,14 +713,10 @@ export default function AdminRolesPage() {
                 Employees <span className="text-gray-400 font-normal text-sm">({employees.length})</span>
               </h2>
               <div className="flex items-center gap-3">
-                <button onClick={fetchUsers} className="text-xs text-primary-600 hover:underline">
-                  Refresh
-                </button>
+                <button onClick={fetchEmployees} className="text-xs text-primary-600 hover:underline">Refresh</button>
                 {canManageEmployees && (
-                  <button
-                    onClick={() => setShowAddEmployee(true)}
-                    className="px-3 py-1.5 text-sm font-medium text-white bg-primary-600 rounded hover:bg-primary-700 transition"
-                  >
+                  <button onClick={() => setShowAddEmployee(true)}
+                    className="px-3 py-1.5 text-sm font-medium text-white bg-primary-600 rounded hover:bg-primary-700 transition">
                     + Add Employee
                   </button>
                 )}
@@ -662,11 +725,11 @@ export default function AdminRolesPage() {
 
             {!isSuperAdmin && (
               <div className="px-4 py-2 bg-amber-50 border-b border-amber-100 text-amber-700 text-xs">
-                Role changes are restricted to Super Admins. You are viewing in read-only mode.
+                You are viewing in read-only mode. Contact a Super Admin for changes.
               </div>
             )}
 
-            {loadingUsers ? (
+            {loadingEmployees ? (
               <div className="p-8 text-center text-gray-400">Loading employees...</div>
             ) : (
               <div className="overflow-x-auto">
@@ -675,72 +738,56 @@ export default function AdminRolesPage() {
                     <tr className="border-b bg-gray-50">
                       <th className="text-left p-3 font-medium text-gray-600">Name</th>
                       <th className="text-left p-3 font-medium text-gray-600">Email</th>
-                      <th className="text-left p-3 font-medium text-gray-600">Current Role</th>
-                      <th className="text-left p-3 font-medium text-gray-600">Assign Role</th>
-                      {isSuperAdmin && <th className="text-left p-3 font-medium text-gray-600">Actions</th>}
+                      <th className="text-left p-3 font-medium text-gray-600">Phone</th>
+                      <th className="text-left p-3 font-medium text-gray-600">Role</th>
+                      <th className="text-left p-3 font-medium text-gray-600">Department</th>
+                      <th className="text-left p-3 font-medium text-gray-600">Hire Date</th>
+                      <th className="text-left p-3 font-medium text-gray-600">Status</th>
+                      <th className="text-left p-3 font-medium text-gray-600">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {employees.length === 0 && (
-                      <tr>
-                        <td colSpan={isSuperAdmin ? 5 : 4} className="p-4 text-center text-gray-400">No employees found.</td>
-                      </tr>
+                      <tr><td colSpan={8} className="p-4 text-center text-gray-400">No employees found.</td></tr>
                     )}
-                    {employees.map(u => {
-                      const currentGroup = u.groups[0] ?? ''
-                      return (
-                        <tr key={u.userId} className="border-b hover:bg-gray-50 transition">
-                          <td className="p-3 font-medium text-gray-800">{u.name}</td>
-                          <td className="p-3 text-gray-600">{u.email}</td>
-                          <td className="p-3">
-                            {u.groups.length > 0
-                              ? u.groups.map(g => (
-                                  <span
-                                    key={g}
-                                    className="inline-block bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-full mr-1"
-                                  >
-                                    {g}
-                                  </span>
-                                ))
-                              : <span className="text-gray-400 text-xs">No group</span>
-                            }
-                          </td>
-                          <td className="p-3">
-                            {isSuperAdmin ? (
-                              <>
-                                <select
-                                  disabled={updatingUserId === u.userId}
-                                  value={currentGroup}
-                                  onChange={e => handleRoleChange(u.userId, e.target.value)}
-                                  className="border border-gray-300 rounded px-2 py-1 text-sm disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                                >
-                                  <option value="">-- select --</option>
-                                  {['SUPER_ADMIN', 'ADMIN', 'TEACHER'].map(g => (
-                                    <option key={g} value={g}>{g}</option>
-                                  ))}
-                                </select>
-                                {updatingUserId === u.userId && (
-                                  <span className="ml-2 text-xs text-gray-400">Saving...</span>
-                                )}
-                              </>
-                            ) : (
-                              <span className="text-gray-600 text-sm">{currentGroup || '—'}</span>
-                            )}
-                          </td>
-                          {isSuperAdmin && (
-                            <td className="p-3">
-                              <button
-                                onClick={() => setResetTarget({ userId: u.userId, name: u.name })}
-                                title="Reset password"
-                                className="text-amber-600 hover:text-amber-800 text-xs font-medium px-2 py-1 border border-amber-300 rounded hover:bg-amber-50 transition"
-                              >
-                                🔑 Reset
+                    {employees.map(emp => (
+                      <tr key={emp.userId} className="border-b hover:bg-gray-50 transition">
+                        <td className="p-3 font-medium text-gray-800">{emp.fullName}</td>
+                        <td className="p-3 text-gray-600">{emp.email}</td>
+                        <td className="p-3 text-gray-500">{emp.phone || '—'}</td>
+                        <td className="p-3"><RoleBadge role={emp.role} /></td>
+                        <td className="p-3 text-gray-600">{emp.department || '—'}</td>
+                        <td className="p-3 text-gray-500 text-xs">
+                          {emp.hireDate ? new Date(emp.hireDate).toLocaleDateString() : '—'}
+                        </td>
+                        <td className="p-3"><StatusBadge status={emp.status} /></td>
+                        <td className="p-3">
+                          <div className="flex items-center gap-2">
+                            {/* Edit — visible to admins */}
+                            {canManageEmployees && (
+                              <button onClick={() => setEditTarget(emp)} title="Edit employee"
+                                className="text-gray-500 hover:text-primary-600 transition" aria-label="Edit">
+                                ✏️
                               </button>
-                            </td>
-                          )}
-                        </tr>
-                      )
-                    })}
+                            )}
+                            {/* Delete — SUPER_ADMIN only */}
+                            {isSuperAdmin && (
+                              <button onClick={() => setDeleteTarget(emp)} title="Delete employee"
+                                className="text-gray-400 hover:text-red-600 transition" aria-label="Delete">
+                                🗑️
+                              </button>
+                            )}
+                            {/* Reset password — SUPER_ADMIN only, uses email as Cognito username */}
+                            {isSuperAdmin && (
+                              <button onClick={() => setResetTarget({ userId: emp.email, name: emp.fullName })} title="Reset password"
+                                className="text-amber-600 hover:text-amber-800 text-xs font-medium px-2 py-1 border border-amber-300 rounded hover:bg-amber-50 transition">
+                                🔑
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
@@ -753,12 +800,7 @@ export default function AdminRolesPage() {
           <div className="bg-white rounded-lg shadow-sm border border-gray-200">
             <div className="p-4 border-b flex items-center justify-between">
               <h2 className="font-semibold text-gray-700">Roles</h2>
-              <button
-                onClick={fetchRoles}
-                className="text-xs text-primary-600 hover:underline"
-              >
-                Refresh
-              </button>
+              <button onClick={fetchRoles} className="text-xs text-primary-600 hover:underline">Refresh</button>
             </div>
             {loadingRoles ? (
               <div className="p-8 text-center text-gray-400">Loading roles...</div>
