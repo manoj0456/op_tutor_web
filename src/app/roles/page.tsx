@@ -474,6 +474,7 @@ export default function AdminRolesPage() {
   const [editTarget, setEditTarget]           = useState<Employee | null>(null)
   const [deleteTarget, setDeleteTarget]       = useState<Employee | null>(null)
   const [resetTarget, setResetTarget]         = useState<{ userId: string; name: string } | null>(null)
+  const [createdEmpPassword, setCreatedEmpPassword] = useState<{ name: string; email: string; password: string } | null>(null)
 
   useEffect(() => {
     if (!loaded) return
@@ -541,12 +542,16 @@ export default function AdminRolesPage() {
     role: string; department: string; hireDate: string; status: string
   }) => {
     const token = await getIdToken()
-    await apiFetch('/employees', token, {
+    const result = await apiFetch('/employees', token, {
       method: 'POST',
       body: JSON.stringify(data),
     })
-    flash('Employee created successfully')
     fetchEmployees()
+    if (result?.temporaryPassword) {
+      setCreatedEmpPassword({ name: data.fullName, email: data.email, password: result.temporaryPassword })
+    } else {
+      flash('Employee created successfully')
+    }
   }
 
   const handleEditEmployee = async (userId: string, data: Partial<Employee>) => {
@@ -600,6 +605,28 @@ export default function AdminRolesPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {createdEmpPassword && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-sm p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-2">Employee Created</h2>
+            <p className="text-sm text-gray-600 mb-4">
+              Share this temporary password with <span className="font-medium">{createdEmpPassword.name}</span> (<span className="text-gray-500">{createdEmpPassword.email}</span>).
+              They will be prompted to set a new password on first login.
+            </p>
+            <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded px-3 py-2 mb-4">
+              <span className="flex-1 font-mono text-sm select-all">{createdEmpPassword.password}</span>
+              <button
+                onClick={() => { navigator.clipboard.writeText(createdEmpPassword.password) }}
+                className="text-xs px-2 py-1 bg-primary-600 text-white rounded hover:bg-primary-700"
+              >Copy</button>
+            </div>
+            <button
+              onClick={() => setCreatedEmpPassword(null)}
+              className="w-full px-4 py-2 text-sm font-medium text-white bg-gray-700 rounded hover:bg-gray-800"
+            >Done</button>
+          </div>
+        </div>
+      )}
       {showAddEmployee && (
         <AddEmployeeModal onClose={() => setShowAddEmployee(false)} onSubmit={handleAddEmployee} />
       )}
