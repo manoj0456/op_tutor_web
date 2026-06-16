@@ -23,26 +23,26 @@ const PermissionContext = createContext<PermissionContextValue | null>(null)
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? ''
 
-// Hardcoded defaults per Cognito group when no custom role found
-function getDefaultPermissions(groupId: string): string[] {
+// Hardcoded defaults per roleId — used when no custom role is matched
+function getDefaultPermissions(roleId: string): string[] {
   const ALL = [
-    'view_courses','view_live','manage_courses','manage_roles',
-    'manage_employees','manage_students','promote_admins','view_content',
+    'view_courses', 'view_live', 'manage_courses', 'manage_roles',
+    'manage_employees', 'manage_students', 'promote_admins', 'view_content',
   ]
-  switch (groupId.toUpperCase()) {
+  switch (roleId.toUpperCase()) {
     case 'SUPER_ADMIN': return ALL
-    case 'ADMIN':       return ['view_courses','view_live','manage_courses','manage_roles','manage_employees','manage_students','promote_admins']
-    case 'TEACHER':     return ['view_courses','view_live','manage_courses']
-    default:            return ['view_content','view_courses','view_live']
+    case 'ADMIN':       return ['view_courses', 'view_live', 'manage_courses', 'manage_roles', 'manage_employees', 'manage_students', 'promote_admins']
+    case 'TEACHER':     return ['view_courses', 'view_live', 'manage_courses']
+    default:            return ['view_content', 'view_courses', 'view_live']
   }
 }
 
 // Safely decode a JWT payload (base64url → JSON)
 function decodeJwtPayload(token: string): Record<string, unknown> {
   try {
-    const part = token.split('.')[1]
+    const part   = token.split('.')[1]
     const padded = part.replace(/-/g, '+').replace(/_/g, '/')
-    const json = atob(padded.padEnd(padded.length + (4 - (padded.length % 4)) % 4, '='))
+    const json   = atob(padded.padEnd(padded.length + (4 - (padded.length % 4)) % 4, '='))
     return JSON.parse(json)
   } catch {
     return {}
@@ -66,24 +66,25 @@ export function PermissionProvider({ children }: { children: React.ReactNode }) 
     try {
       const token = await getIdTokenRef.current()
 
-      // 1. Decode JWT to get Cognito group
-      const payload = decodeJwtPayload(token)
+      // 1. Decode JWT to get Cognito groups (may be empty for users not in any group)
+      const payload       = decodeJwtPayload(token)
       const cognitoGroups = (payload['cognito:groups'] as string[] | undefined) ?? []
-      const primaryGroup  = cognitoGroups[0] ?? 'STUDENT'
+      // Only use group-based matching when the user is actually in a Cognito group
+      const primaryGroup  = cognitoGroups.length > 0 ? cognitoGroups[0] : null
 
-      // 2. Fetch /users/me for the assigned roleId (may differ from Cognito group)
-      let roleId   = primaryGroup
-      let roleName = primaryGroup
+      // 2. Fetch /users/me for the explicitly assigned roleId (DynamoDB UserRoles table)
+      let roleId   = primaryGroup ?? 'STUDENT'
+      let roleName = roleId
       try {
         const meRes = await fetch(`${API_URL}/users/me`, {
           headers: { Authorization: `Bearer ${token}` },
         })
         if (meRes.ok) {
           const me = await meRes.json()
-          if (me?.roleId) { roleId   = me.roleId   }
-          if (me?.roleName) { roleName = me.roleName }
+          if (me?.roleId)   roleId   = me.roleId
+          if (me?.roleName) roleName = me.roleName
         }
-      } catch { /* fall through to group-based defaults */ }
+      } catch { /* fall through */ }
 
       // 3. Fetch all custom roles
       let customRoles: Array<{ roleId: string; name: string; permissions: string[] }> = []
@@ -94,12 +95,15 @@ export function PermissionProvider({ children }: { children: React.ReactNode }) 
         if (rolesRes.ok) customRoles = await rolesRes.json()
       } catch { /* ignore */ }
 
-      // 4. Match Cognito group name → custom role (case-insensitive on role.name)
-      const matchedRole = customRoles.find(
-        r => r.name.toLowerCase() === primaryGroup.toLowerCase()
-      )
+      // 4. Match ONLY when user is in a Cognito group (prevents phantom matches when
+      //    primaryGroup defaults and happens to equal a role name like "Student")
+      const matchedRole = primaryGroup
+        ? customRoles.find(r => r.name.toLowerCase() === primaryGroup.toLowerCase())
+        : null
 
-      // 5. Determine final permissions
+      // 5. Determine final permissions:
+      //    • Custom role match via Cognito group → use its permissions
+      //    • Otherwise → hardcoded defaults for the roleId (SUPER_ADMIN gets all, etc.)
       let permissions: string[]
       if (matchedRole && Array.isArray(matchedRole.permissions) && matchedRole.permissions.length > 0) {
         permissions = matchedRole.permissions
@@ -109,7 +113,7 @@ export function PermissionProvider({ children }: { children: React.ReactNode }) 
 
       setUserRole({ email: userEmail, roleId, roleName, permissions })
     } catch {
-      setUserRole({ email: userEmail, roleId: 'STUDENT', roleName: 'Student', permissions: ['view_content'] })
+      setUserRole({ email: userEmail, roleId: 'STUDENT', roleName: 'Student', permissions: getDefaultPermissions('STUDENT') })
     } finally {
       setLoaded(true)
     }
