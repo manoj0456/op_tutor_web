@@ -174,6 +174,15 @@ jobs:
         working-directory: lambda
         run: node seed.mjs
 
+      - name: Seed Super Admin user role
+        run: |
+          NOW=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
+          aws dynamodb put-item \
+            --table-name OpTutor-UserRoles \
+            --region "$AWS_REGION" \
+            --item "{\"userEmail\":{\"S\":\"manoj@oppertunitypool.com\"},\"roleId\":{\"S\":\"SUPER_ADMIN\"},\"roleName\":{\"S\":\"Super Admin\"},\"name\":{\"S\":\"Manoj\"},\"assignedBy\":{\"S\":\"system\"},\"assignedAt\":{\"S\":\"$NOW\"}}" 
+          echo "Super Admin role seeded for manoj@oppertunitypool.com"
+
       - name: Save NEXT_PUBLIC_API_URL secret
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
