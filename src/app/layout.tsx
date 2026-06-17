@@ -4,7 +4,7 @@ import { Providers } from '@/components/shared/Providers'
 import { Navbar } from '@/components/layout/Navbar'
 
 export const metadata: Metadata = {
-  title: 'OpTutor â Future-Ready Learning',
+  title: 'OpTutor',
   description: 'Learn technology, AI, math, science and more with live classes and recorded courses.',
   keywords: ['online tutoring', 'AI learning', 'live classes', 'technology education'],
   icons: {
