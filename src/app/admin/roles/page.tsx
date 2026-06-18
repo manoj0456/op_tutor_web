@@ -73,6 +73,101 @@ function StatusBadge({ status }: { status?: string }) {
 }
 
 // ââ Edit Employee Modal âââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ── Add Employee Modal ────────────────────────────────────────────────────────
+interface AddEmployeeModalProps {
+  onClose: () => void
+  onSubmit: (data: {
+    fullName: string; email: string; phone: string;
+    role: string; department: string; hireDate: string; status: string
+  }) => Promise<void>
+}
+
+function AddEmployeeModal({ onClose, onSubmit }: AddEmployeeModalProps) {
+  const [fullName, setFullName]     = useState('')
+  const [email, setEmail]           = useState('')
+  const [phone, setPhone]           = useState('')
+  const [role, setRole]             = useState('ADMIN')
+  const [department, setDepartment] = useState('')
+  const [hireDate, setHireDate]     = useState('')
+  const [status, setStatus]         = useState('active')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError]           = useState<string | null>(null)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!fullName.trim() || !email.trim()) { setError('Name and email are required'); return }
+    setSubmitting(true); setError(null)
+    try {
+      await onSubmit({ fullName: fullName.trim(), email: email.trim(), phone: phone.trim(), role, department: department.trim(), hireDate, status })
+      onClose()
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to create employee')
+    } finally { setSubmitting(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">Add Employee</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none" aria-label="Close">&times;</button>
+        </div>
+        {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{error}</div>}
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
+            <input type="text" value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Jane Smith"
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jane@example.com"
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+            <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+1 555 000 0000"
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Role *</label>
+            <select value={role} onChange={e => setRole(e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500">
+              <option value="ADMIN">Admin</option>
+              <option value="TEACHER">Teacher</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
+            <input type="text" value={department} onChange={e => setDepartment(e.target.value)} placeholder="e.g. Engineering"
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Hire Date</label>
+            <input type="date" value={hireDate} onChange={e => setHireDate(e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+            <select value={status} onChange={e => setStatus(e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500">
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+          </div>
+          <div className="flex justify-end gap-3 pt-2">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50">Cancel</button>
+            <button type="submit" disabled={submitting}
+              className="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded hover:bg-primary-700 disabled:opacity-50">
+              {submitting ? 'Creating...' : 'Create Employee'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 interface EditEmployeeModalProps {
   employee: Employee
   onClose: () => void
@@ -374,6 +469,7 @@ export default function AdminRolesPage() {
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null)
 
   // Modal state
+  const [showAddEmployee, setShowAddEmployee] = useState(false)
   const [showAddStudent, setShowAddStudent]   = useState(false)
   const [editTarget, setEditTarget]           = useState<Employee | null>(null)
   const [deleteTarget, setDeleteTarget]       = useState<Employee | null>(null)
@@ -438,6 +534,19 @@ export default function AdminRolesPage() {
     finally { setUpdatingUserId(null) }
   }
 
+  const handleAddEmployee = async (data: {
+    fullName: string; email: string; phone: string;
+    role: string; department: string; hireDate: string; status: string
+  }) => {
+    const token = await getIdToken()
+    await apiFetch('/employees', token, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+    flash('Employee created successfully')
+    fetchEmployees()
+  }
+
   const handleEditEmployee = async (userId: string, data: Partial<Employee>) => {
     const token = await getIdToken()
     await apiFetch(`/employees/${encodeURIComponent(userId)}`, token, {
@@ -489,6 +598,9 @@ export default function AdminRolesPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {showAddEmployee && (
+        <AddEmployeeModal onClose={() => setShowAddEmployee(false)} onSubmit={handleAddEmployee} />
+      )}
       {showAddStudent && (
         <AddStudentModal onClose={() => setShowAddStudent(false)} onSubmit={handleAddStudent} />
       )}
@@ -596,6 +708,12 @@ export default function AdminRolesPage() {
               </h2>
               <div className="flex items-center gap-3">
                 <button onClick={fetchEmployees} className="text-xs text-primary-600 hover:underline">Refresh</button>
+                {canManageEmployees && (
+                  <button onClick={() => setShowAddEmployee(true)}
+                    className="px-3 py-1.5 text-sm font-medium text-white bg-primary-600 rounded hover:bg-primary-700 transition">
+                    + Add Employee
+                  </button>
+                )}
               </div>
             </div>
 
