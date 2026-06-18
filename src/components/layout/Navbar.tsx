@@ -6,7 +6,7 @@ import { usePermissions } from '@/context/PermissionContext'
 
 export function Navbar() {
   const { user, userEmail, signOut } = useAuth()
-  const { hasPermission, loaded } = usePermissions()
+  const { hasPermission, loaded, isSuperAdmin } = usePermissions()
   const router = useRouter()
 
   const handleLogout = () => {
@@ -30,6 +30,9 @@ export function Navbar() {
           )}
           {loaded && hasPermission('manage_roles') && (
             <Link href="/roles" className="text-sm text-gray-600 hover:text-primary-600 transition">Roles</Link>
+          )}
+          {loaded && isSuperAdmin && (
+            <Link href="/docs/flow" className="text-sm text-gray-600 hover:text-primary-600 transition">Flow Docs</Link>
           )}
 
           {user ? (
