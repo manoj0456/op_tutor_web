@@ -50,7 +50,7 @@ interface Role {
 
 type Tab = 'students' | 'employees' | 'roles'
 
-// ── Permission definitions ────────────────────────────────────────────────────
+// ââ Permission definitions ââââââââââââââââââââââââââââââââââââââââââââââââââââ
 const PAGE_PERMISSIONS = [
   { id: 'view_courses',  label: 'Courses' },
   { id: 'view_live',     label: 'Live Sessions' },
@@ -64,7 +64,7 @@ const ACTION_PERMISSIONS = [
   { id: 'promote_admins',   label: 'Reset Password / Change User Roles' },
 ] as const
 
-// ── Role badge helper ────────────────────────────────────────────────────────
+// ââ Role badge helper ââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 function RoleBadge({ role }: { role: string }) {
   const colors: Record<string, string> = {
     SUPER_ADMIN: 'bg-purple-100 text-purple-700',
@@ -87,7 +87,7 @@ function StatusBadge({ status }: { status?: string }) {
   )
 }
 
-// ── Add / Edit Role Modal ────────────────────────────────────────────────────
+// ââ Add / Edit Role Modal ââââââââââââââââââââââââââââââââââââââââââââââââââââ
 interface RoleModalProps {
   initial?: Role
   onClose: () => void
@@ -196,7 +196,7 @@ function RoleModal({ initial, onClose, onSubmit }: RoleModalProps) {
             <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50">Cancel</button>
             <button type="submit" disabled={submitting}
               className="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded hover:bg-primary-700 disabled:opacity-50">
-              {submitting ? 'Saving…' : (initial ? 'Save Changes' : 'Create Role')}
+              {submitting ? 'Savingâ¦' : (initial ? 'Save Changes' : 'Create Role')}
             </button>
           </div>
         </form>
@@ -205,7 +205,7 @@ function RoleModal({ initial, onClose, onSubmit }: RoleModalProps) {
   )
 }
 
-// ── Add Employee Modal ────────────────────────────────────────────────────────
+// ââ Add Employee Modal ââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 interface AddEmployeeModalProps {
   onClose: () => void
   onSubmit: (data: {
@@ -300,7 +300,7 @@ function AddEmployeeModal({ onClose, onSubmit }: AddEmployeeModalProps) {
   )
 }
 
-// ── Edit Employee Modal ───────────────────────────────────────────────────────
+// ââ Edit Employee Modal âââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 interface EditEmployeeModalProps {
   employee: Employee
   onClose: () => void
@@ -383,7 +383,7 @@ function EditEmployeeModal({ employee, onClose, onSubmit }: EditEmployeeModalPro
   )
 }
 
-// ── Delete Employee Confirm Modal ─────────────────────────────────────────────
+// ââ Delete Employee Confirm Modal âââââââââââââââââââââââââââââââââââââââââââââ
 interface DeleteEmployeeModalProps {
   employee: Employee
   onClose: () => void
@@ -427,7 +427,7 @@ function DeleteEmployeeModal({ employee, onClose, onConfirm }: DeleteEmployeeMod
   )
 }
 
-// ── Add Student Modal ─────────────────────────────────────────────────────────
+// ââ Add Student Modal âââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 interface AddStudentModalProps {
   onClose: () => void
   onSubmit: (fullName: string, email: string, phone: string, dateOfBirth: string) => Promise<void>
@@ -495,7 +495,7 @@ function AddStudentModal({ onClose, onSubmit }: AddStudentModalProps) {
   )
 }
 
-// ── Reset Password Modal ──────────────────────────────────────────────────────
+// ââ Reset Password Modal ââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 function generateTempPassword(): string {
   const upper   = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
   const lower   = 'abcdefghjkmnpqrstuvwxyz'
@@ -555,7 +555,7 @@ function ResetPasswordModal({ userName, onClose, onConfirm }: ResetPasswordModal
               className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-500" />
             <button type="button" onClick={copyToClipboard}
               className="px-3 py-2 text-xs border border-gray-300 rounded hover:bg-gray-50 text-gray-600 whitespace-nowrap">
-              {copied ? '✓ Copied' : 'Copy'}
+              {copied ? 'â Copied' : 'Copy'}
             </button>
           </div>
           <button type="button" onClick={() => setPassword(generateTempPassword())} className="mt-1 text-xs text-primary-600 hover:underline">
@@ -574,7 +574,7 @@ function ResetPasswordModal({ userName, onClose, onConfirm }: ResetPasswordModal
   )
 }
 
-// ── Main Page ─────────────────────────────────────────────────────────────────
+// ââ Main Page âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 export default function AdminRolesPage() {
   const { getIdToken } = useAuth()
   const { hasPermission, isSuperAdmin, userRole, loaded } = usePermissions()
@@ -819,7 +819,7 @@ export default function AdminRolesPage() {
           ))}
         </div>
 
-        {/* ── Tab 1: Students ─────────────────────────────────────────────── */}
+        {/* ââ Tab 1: Students âââââââââââââââââââââââââââââââââââââââââââââââ */}
         {activeTab === 'students' && (
           <div className="bg-white rounded-lg shadow-sm border border-gray-200">
             <div className="p-4 border-b flex items-center justify-between">
@@ -832,12 +832,6 @@ export default function AdminRolesPage() {
                   <button onClick={() => setShowAddStudent(true)}
                     className="px-3 py-1.5 text-sm font-medium text-white bg-green-600 rounded hover:bg-green-700 transition">
                     + Add Student
-                  </button>
-                )}
-                {canManageEmployees && (
-                  <button onClick={() => setShowAddEmployee(true)}
-                    className="px-3 py-1.5 text-sm font-medium text-white bg-primary-600 rounded hover:bg-primary-700 transition">
-                    + Add Employee
                   </button>
                 )}
               </div>
@@ -865,14 +859,14 @@ export default function AdminRolesPage() {
                       <tr key={u.userId} className="border-b hover:bg-gray-50 transition">
                         <td className="p-3 font-medium text-gray-800">{u.name}</td>
                         <td className="p-3 text-gray-600">{u.email}</td>
-                        <td className="p-3 text-gray-600 text-center">{u.enrolledCourses != null ? u.enrolledCourses : '—'}</td>
-                        <td className="p-3 text-gray-500 text-xs">{u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—'}</td>
-                        <td className="p-3 text-gray-500 text-xs">{u.lastActive ? new Date(u.lastActive).toLocaleDateString() : '—'}</td>
+                        <td className="p-3 text-gray-600 text-center">{u.enrolledCourses != null ? u.enrolledCourses : 'â'}</td>
+                        <td className="p-3 text-gray-500 text-xs">{u.createdAt ? new Date(u.createdAt).toLocaleDateString() : 'â'}</td>
+                        <td className="p-3 text-gray-500 text-xs">{u.lastActive ? new Date(u.lastActive).toLocaleDateString() : 'â'}</td>
                         {isSuperAdmin && (
                           <td className="p-3">
                             <button onClick={() => setResetTarget({ userId: u.userId, name: u.name })} title="Reset password"
                               className="text-amber-600 hover:text-amber-800 text-xs font-medium px-2 py-1 border border-amber-300 rounded hover:bg-amber-50 transition">
-                              🔑 Reset
+                              ð Reset
                             </button>
                           </td>
                         )}
@@ -885,7 +879,7 @@ export default function AdminRolesPage() {
           </div>
         )}
 
-        {/* ── Tab 2: Employees ────────────────────────────────────────────── */}
+        {/* ââ Tab 2: Employees ââââââââââââââââââââââââââââââââââââââââââââââ */}
         {activeTab === 'employees' && (
           <div className="bg-white rounded-lg shadow-sm border border-gray-200">
             <div className="p-4 border-b flex items-center justify-between">
@@ -934,27 +928,27 @@ export default function AdminRolesPage() {
                       <tr key={emp.userId} className="border-b hover:bg-gray-50 transition">
                         <td className="p-3 font-medium text-gray-800">{emp.fullName}</td>
                         <td className="p-3 text-gray-600">{emp.email}</td>
-                        <td className="p-3 text-gray-500">{emp.phone || '—'}</td>
+                        <td className="p-3 text-gray-500">{emp.phone || 'â'}</td>
                         <td className="p-3"><RoleBadge role={emp.role} /></td>
-                        <td className="p-3 text-gray-600">{emp.department || '—'}</td>
+                        <td className="p-3 text-gray-600">{emp.department || 'â'}</td>
                         <td className="p-3 text-gray-500 text-xs">
-                          {emp.hireDate ? new Date(emp.hireDate).toLocaleDateString() : '—'}
+                          {emp.hireDate ? new Date(emp.hireDate).toLocaleDateString() : 'â'}
                         </td>
                         <td className="p-3"><StatusBadge status={emp.status} /></td>
                         <td className="p-3">
                           <div className="flex items-center gap-2">
                             {canManageEmployees && (
                               <button onClick={() => setEditTarget(emp)} title="Edit employee"
-                                className="text-gray-500 hover:text-primary-600 transition" aria-label="Edit">✏️</button>
+                                className="text-gray-500 hover:text-primary-600 transition" aria-label="Edit">âï¸</button>
                             )}
                             {isSuperAdmin && (
                               <button onClick={() => setDeleteTarget(emp)} title="Delete employee"
-                                className="text-gray-400 hover:text-red-600 transition" aria-label="Delete">🗑️</button>
+                                className="text-gray-400 hover:text-red-600 transition" aria-label="Delete">ðï¸</button>
                             )}
                             {isSuperAdmin && (
                               <button onClick={() => setResetTarget({ userId: emp.email, name: emp.fullName })} title="Reset password"
                                 className="text-amber-600 hover:text-amber-800 text-xs font-medium px-2 py-1 border border-amber-300 rounded hover:bg-amber-50 transition">
-                                🔑
+                                ð
                               </button>
                             )}
                           </div>
@@ -968,7 +962,7 @@ export default function AdminRolesPage() {
           </div>
         )}
 
-        {/* ── Tab 3: Roles ────────────────────────────────────────────────── */}
+        {/* ââ Tab 3: Roles ââââââââââââââââââââââââââââââââââââââââââââââââââ */}
         {activeTab === 'roles' && (
           <div className="bg-white rounded-lg shadow-sm border border-gray-200">
             <div className="p-4 border-b flex items-center justify-between">
@@ -1005,7 +999,7 @@ export default function AdminRolesPage() {
                           className="ml-2 text-gray-400 hover:text-primary-600 transition p-1 rounded hover:bg-gray-100"
                           aria-label="Edit role"
                         >
-                          ✏️
+                          âï¸
                         </button>
                       </div>
                     </div>
