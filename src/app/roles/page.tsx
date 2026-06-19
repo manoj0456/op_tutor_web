@@ -50,7 +50,7 @@ interface Role {
 
 type Tab = 'students' | 'employees' | 'roles'
 
-// ââ Permission definitions ââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ── Permission definitions ────────────────────────────────────────────────────
 const PAGE_PERMISSIONS = [
   { id: 'view_courses',  label: 'Courses' },
   { id: 'view_live',     label: 'Live Sessions' },
@@ -64,7 +64,7 @@ const ACTION_PERMISSIONS = [
   { id: 'promote_admins',   label: 'Reset Password / Change User Roles' },
 ] as const
 
-// ââ Role badge helper ââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ── Role badge helper ────────────────────────────────────────────────────────
 function RoleBadge({ role }: { role: string }) {
   const colors: Record<string, string> = {
     SUPER_ADMIN: 'bg-purple-100 text-purple-700',
@@ -87,7 +87,7 @@ function StatusBadge({ status }: { status?: string }) {
   )
 }
 
-// ââ Add / Edit Role Modal ââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ── Add / Edit Role Modal ────────────────────────────────────────────────────
 interface RoleModalProps {
   initial?: Role
   onClose: () => void
@@ -196,7 +196,7 @@ function RoleModal({ initial, onClose, onSubmit }: RoleModalProps) {
             <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50">Cancel</button>
             <button type="submit" disabled={submitting}
               className="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded hover:bg-primary-700 disabled:opacity-50">
-              {submitting ? 'Savingâ¦' : (initial ? 'Save Changes' : 'Create Role')}
+              {submitting ? 'Saving…' : (initial ? 'Save Changes' : 'Create Role')}
             </button>
           </div>
         </form>
@@ -205,7 +205,102 @@ function RoleModal({ initial, onClose, onSubmit }: RoleModalProps) {
   )
 }
 
-// ââ Edit Employee Modal âââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ── Add Employee Modal ────────────────────────────────────────────────────────
+interface AddEmployeeModalProps {
+  onClose: () => void
+  onSubmit: (data: {
+    fullName: string; email: string; phone: string;
+    role: string; department: string; hireDate: string; status: string
+  }) => Promise<void>
+}
+
+function AddEmployeeModal({ onClose, onSubmit }: AddEmployeeModalProps) {
+  const [fullName, setFullName]     = useState('')
+  const [email, setEmail]           = useState('')
+  const [phone, setPhone]           = useState('')
+  const [role, setRole]             = useState('ADMIN')
+  const [department, setDepartment] = useState('')
+  const [hireDate, setHireDate]     = useState('')
+  const [status, setStatus]         = useState('active')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError]           = useState<string | null>(null)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!fullName.trim() || !email.trim()) { setError('Name and email are required'); return }
+    setSubmitting(true); setError(null)
+    try {
+      await onSubmit({ fullName: fullName.trim(), email: email.trim(), phone: phone.trim(), role, department: department.trim(), hireDate, status })
+      onClose()
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to create employee')
+    } finally { setSubmitting(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">Add Employee</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none" aria-label="Close">&times;</button>
+        </div>
+        {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{error}</div>}
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
+            <input type="text" value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Jane Smith"
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jane@example.com"
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+            <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+1 555 000 0000"
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Role *</label>
+            <select value={role} onChange={e => setRole(e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500">
+              <option value="ADMIN">Admin</option>
+              <option value="TEACHER">Teacher</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
+            <input type="text" value={department} onChange={e => setDepartment(e.target.value)} placeholder="e.g. Engineering"
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Hire Date</label>
+            <input type="date" value={hireDate} onChange={e => setHireDate(e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+            <select value={status} onChange={e => setStatus(e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500">
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+          </div>
+          <div className="flex justify-end gap-3 pt-2">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50">Cancel</button>
+            <button type="submit" disabled={submitting}
+              className="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded hover:bg-primary-700 disabled:opacity-50">
+              {submitting ? 'Creating...' : 'Create Employee'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// ── Edit Employee Modal ───────────────────────────────────────────────────────
 interface EditEmployeeModalProps {
   employee: Employee
   onClose: () => void
@@ -288,7 +383,7 @@ function EditEmployeeModal({ employee, onClose, onSubmit }: EditEmployeeModalPro
   )
 }
 
-// ââ Delete Employee Confirm Modal âââââââââââââââââââââââââââââââââââââââââââââ
+// ── Delete Employee Confirm Modal ─────────────────────────────────────────────
 interface DeleteEmployeeModalProps {
   employee: Employee
   onClose: () => void
@@ -332,7 +427,7 @@ function DeleteEmployeeModal({ employee, onClose, onConfirm }: DeleteEmployeeMod
   )
 }
 
-// ââ Add Student Modal âââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ── Add Student Modal ─────────────────────────────────────────────────────────
 interface AddStudentModalProps {
   onClose: () => void
   onSubmit: (fullName: string, email: string, phone: string, dateOfBirth: string) => Promise<void>
@@ -400,7 +495,7 @@ function AddStudentModal({ onClose, onSubmit }: AddStudentModalProps) {
   )
 }
 
-// ââ Reset Password Modal ââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ── Reset Password Modal ──────────────────────────────────────────────────────
 function generateTempPassword(): string {
   const upper   = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
   const lower   = 'abcdefghjkmnpqrstuvwxyz'
@@ -460,7 +555,7 @@ function ResetPasswordModal({ userName, onClose, onConfirm }: ResetPasswordModal
               className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-500" />
             <button type="button" onClick={copyToClipboard}
               className="px-3 py-2 text-xs border border-gray-300 rounded hover:bg-gray-50 text-gray-600 whitespace-nowrap">
-              {copied ? 'â Copied' : 'Copy'}
+              {copied ? '✓ Copied' : 'Copy'}
             </button>
           </div>
           <button type="button" onClick={() => setPassword(generateTempPassword())} className="mt-1 text-xs text-primary-600 hover:underline">
@@ -479,7 +574,7 @@ function ResetPasswordModal({ userName, onClose, onConfirm }: ResetPasswordModal
   )
 }
 
-// ââ Main Page âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ── Main Page ─────────────────────────────────────────────────────────────────
 export default function AdminRolesPage() {
   const { getIdToken } = useAuth()
   const { hasPermission, isSuperAdmin, userRole, loaded } = usePermissions()
@@ -508,6 +603,7 @@ export default function AdminRolesPage() {
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null)
 
   // Modal state
+  const [showAddEmployee, setShowAddEmployee] = useState(false)
   const [showAddStudent, setShowAddStudent]   = useState(false)
   const [editTarget, setEditTarget]           = useState<Employee | null>(null)
   const [deleteTarget, setDeleteTarget]       = useState<Employee | null>(null)
@@ -589,6 +685,23 @@ export default function AdminRolesPage() {
       flash('Role updated successfully')
     } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Failed to update role') }
     finally { setUpdatingUserId(null) }
+  }
+
+  const handleAddEmployee = async (data: {
+    fullName: string; email: string; phone: string;
+    role: string; department: string; hireDate: string; status: string
+  }) => {
+    const token = await getIdToken()
+    const result = await apiFetch('/employees', token, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+    fetchEmployees()
+    if (result?.temporaryPassword) {
+      setCreatedEmpPassword({ name: data.fullName, email: data.email, password: result.temporaryPassword })
+    } else {
+      flash('Employee created successfully')
+    }
   }
 
   const handleEditEmployee = async (userId: string, data: Partial<Employee>) => {
@@ -677,6 +790,7 @@ export default function AdminRolesPage() {
         />
       )}
 
+      {showAddEmployee && <AddEmployeeModal onClose={() => setShowAddEmployee(false)} onSubmit={handleAddEmployee} />}
       {showAddStudent  && <AddStudentModal  onClose={() => setShowAddStudent(false)}  onSubmit={handleAddStudent}  />}
       {editTarget   && <EditEmployeeModal   employee={editTarget}   onClose={() => setEditTarget(null)}   onSubmit={handleEditEmployee} />}
       {deleteTarget && <DeleteEmployeeModal employee={deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={handleDeleteEmployee} />}
@@ -705,7 +819,7 @@ export default function AdminRolesPage() {
           ))}
         </div>
 
-        {/* ââ Tab 1: Students âââââââââââââââââââââââââââââââââââââââââââââââ */}
+        {/* ── Tab 1: Students ─────────────────────────────────────────────── */}
         {activeTab === 'students' && (
           <div className="bg-white rounded-lg shadow-sm border border-gray-200">
             <div className="p-4 border-b flex items-center justify-between">
@@ -718,6 +832,12 @@ export default function AdminRolesPage() {
                   <button onClick={() => setShowAddStudent(true)}
                     className="px-3 py-1.5 text-sm font-medium text-white bg-green-600 rounded hover:bg-green-700 transition">
                     + Add Student
+                  </button>
+                )}
+                {canManageEmployees && (
+                  <button onClick={() => setShowAddEmployee(true)}
+                    className="px-3 py-1.5 text-sm font-medium text-white bg-primary-600 rounded hover:bg-primary-700 transition">
+                    + Add Employee
                   </button>
                 )}
               </div>
@@ -745,14 +865,14 @@ export default function AdminRolesPage() {
                       <tr key={u.userId} className="border-b hover:bg-gray-50 transition">
                         <td className="p-3 font-medium text-gray-800">{u.name}</td>
                         <td className="p-3 text-gray-600">{u.email}</td>
-                        <td className="p-3 text-gray-600 text-center">{u.enrolledCourses != null ? u.enrolledCourses : 'â'}</td>
-                        <td className="p-3 text-gray-500 text-xs">{u.createdAt ? new Date(u.createdAt).toLocaleDateString() : 'â'}</td>
-                        <td className="p-3 text-gray-500 text-xs">{u.lastActive ? new Date(u.lastActive).toLocaleDateString() : 'â'}</td>
+                        <td className="p-3 text-gray-600 text-center">{u.enrolledCourses != null ? u.enrolledCourses : '—'}</td>
+                        <td className="p-3 text-gray-500 text-xs">{u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—'}</td>
+                        <td className="p-3 text-gray-500 text-xs">{u.lastActive ? new Date(u.lastActive).toLocaleDateString() : '—'}</td>
                         {isSuperAdmin && (
                           <td className="p-3">
                             <button onClick={() => setResetTarget({ userId: u.userId, name: u.name })} title="Reset password"
                               className="text-amber-600 hover:text-amber-800 text-xs font-medium px-2 py-1 border border-amber-300 rounded hover:bg-amber-50 transition">
-                              ð Reset
+                              🔑 Reset
                             </button>
                           </td>
                         )}
@@ -765,7 +885,7 @@ export default function AdminRolesPage() {
           </div>
         )}
 
-        {/* ââ Tab 2: Employees ââââââââââââââââââââââââââââââââââââââââââââââ */}
+        {/* ── Tab 2: Employees ────────────────────────────────────────────── */}
         {activeTab === 'employees' && (
           <div className="bg-white rounded-lg shadow-sm border border-gray-200">
             <div className="p-4 border-b flex items-center justify-between">
@@ -774,6 +894,12 @@ export default function AdminRolesPage() {
               </h2>
               <div className="flex items-center gap-3">
                 <button onClick={fetchEmployees} className="text-xs text-primary-600 hover:underline">Refresh</button>
+                {canManageEmployees && (
+                  <button onClick={() => setShowAddEmployee(true)}
+                    className="px-3 py-1.5 text-sm font-medium text-white bg-primary-600 rounded hover:bg-primary-700 transition">
+                    + Add Employee
+                  </button>
+                )}
               </div>
             </div>
 
@@ -808,27 +934,27 @@ export default function AdminRolesPage() {
                       <tr key={emp.userId} className="border-b hover:bg-gray-50 transition">
                         <td className="p-3 font-medium text-gray-800">{emp.fullName}</td>
                         <td className="p-3 text-gray-600">{emp.email}</td>
-                        <td className="p-3 text-gray-500">{emp.phone || 'â'}</td>
+                        <td className="p-3 text-gray-500">{emp.phone || '—'}</td>
                         <td className="p-3"><RoleBadge role={emp.role} /></td>
-                        <td className="p-3 text-gray-600">{emp.department || 'â'}</td>
+                        <td className="p-3 text-gray-600">{emp.department || '—'}</td>
                         <td className="p-3 text-gray-500 text-xs">
-                          {emp.hireDate ? new Date(emp.hireDate).toLocaleDateString() : 'â'}
+                          {emp.hireDate ? new Date(emp.hireDate).toLocaleDateString() : '—'}
                         </td>
                         <td className="p-3"><StatusBadge status={emp.status} /></td>
                         <td className="p-3">
                           <div className="flex items-center gap-2">
                             {canManageEmployees && (
                               <button onClick={() => setEditTarget(emp)} title="Edit employee"
-                                className="text-gray-500 hover:text-primary-600 transition" aria-label="Edit">âï¸</button>
+                                className="text-gray-500 hover:text-primary-600 transition" aria-label="Edit">✏️</button>
                             )}
                             {isSuperAdmin && (
                               <button onClick={() => setDeleteTarget(emp)} title="Delete employee"
-                                className="text-gray-400 hover:text-red-600 transition" aria-label="Delete">ðï¸</button>
+                                className="text-gray-400 hover:text-red-600 transition" aria-label="Delete">🗑️</button>
                             )}
                             {isSuperAdmin && (
                               <button onClick={() => setResetTarget({ userId: emp.email, name: emp.fullName })} title="Reset password"
                                 className="text-amber-600 hover:text-amber-800 text-xs font-medium px-2 py-1 border border-amber-300 rounded hover:bg-amber-50 transition">
-                                ð
+                                🔑
                               </button>
                             )}
                           </div>
@@ -842,7 +968,7 @@ export default function AdminRolesPage() {
           </div>
         )}
 
-        {/* ââ Tab 3: Roles ââââââââââââââââââââââââââââââââââââââââââââââââââ */}
+        {/* ── Tab 3: Roles ────────────────────────────────────────────────── */}
         {activeTab === 'roles' && (
           <div className="bg-white rounded-lg shadow-sm border border-gray-200">
             <div className="p-4 border-b flex items-center justify-between">
@@ -879,7 +1005,7 @@ export default function AdminRolesPage() {
                           className="ml-2 text-gray-400 hover:text-primary-600 transition p-1 rounded hover:bg-gray-100"
                           aria-label="Edit role"
                         >
-                          âï¸
+                          ✏️
                         </button>
                       </div>
                     </div>
