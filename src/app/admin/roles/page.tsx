@@ -641,7 +641,7 @@ export default function AdminRolesPage() {
           ))}
         </div>
 
-        {/* Tab 1: Students*/}
+        {/* Tab 1: Students */}
         {activeTab === 'students' && (
           <div className="bg-white rounded-lg shadow-sm border border-gray-200">
             <div className="p-4 border-b flex items-center justify-between">
@@ -699,7 +699,7 @@ export default function AdminRolesPage() {
           </div>
         )}
 
-        {/Tab 2: Employees (DynamoDB)*/}
+        {/* Tab 2: Employees (DynamoDB) */}
         {activeTab === 'employees' && (
           <div className="bg-white rounded-lg shadow-sm border border-gray-200">
             <div className="p-4 border-b flex items-center justify-between">
