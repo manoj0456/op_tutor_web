@@ -1,0 +1,44 @@
+name: Validate Add Student Fix
+on:
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get Cognito token
+        id: auth
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-2
+        run: |
+          TOKEN=$(aws cognito-idp admin-initiate-auth \
+            --user-pool-id us-east-2_iMjggcLlT \
+            --client-id 2ohbrl0ev8ajk5ls900cmf6kd8 \
+            --auth-flow ADMIN_NO_SRP_AUTH \
+            --auth-parameters USERNAME=manoj@oppertunitypool.com,PASSWORD=Test@12345! \
+            --query 'AuthenticationResult.IdToken' --output text 2>&1) || true
+          echo "TOKEN_RESULT=$TOKEN" >> "$GITHUB_OUTPUT"
+          echo "Token length: ${#TOKEN}"
+
+      - name: Test POST /students
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-2
+          API_URL: https://sny9tz0wyh.execute-api.us-east-2.amazonaws.com/prod
+        run: |
+          TOKEN="${{ steps.auth.outputs.TOKEN_RESULT }}"
+          TEST_EMAIL="validate-student-$(date +%s)@test.com"
+          echo "Testing with email: $TEST_EMAIL"
+          RESPONSE=$(curl -s -X POST "${API_URL}/students" \
+            -H "Authorization: Bearer ${TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{\"userId\":\"test-$(date +%s)\",\"email\":\"${TEST_EMAIL}\",\"fullName\":\"Validate Student\",\"phone\":\"555-0000\",\"dateOfBirth\":\"2000-01-01\"}")
+          echo "RESPONSE: $RESPONSE"
+          if echo "$RESPONSE" | grep -q "temporaryPassword"; then
+            echo "✅ SUCCESS: temporaryPassword present in response"
+          else
+            echo "❌ FAIL: temporaryPassword missing"
+            echo "Full response: $RESPONSE"
+          fi
