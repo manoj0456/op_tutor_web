@@ -15,6 +15,7 @@ import {
   AdminRemoveUserFromGroupCommand,
   AdminListGroupsForUserCommand,
   AdminDeleteUserCommand,
+  CreateGroupCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
 import { randomUUID } from 'crypto';
 
@@ -535,7 +536,9 @@ export async function handler(event) {
         // Create Cognito user + add to STUDENT group (mirrors employee flow)
     const temporaryPassword = generateTempPassword();
     try {
-      await cognito.send(new AdminCreateUserCommand({
+      await cognito.send(new // Ensure STUDENT group exists (idempotent)
+    try { await cognito.send(new CreateGroupCommand({ UserPoolId: USER_POOL_ID, GroupName: 'STUDENT' })); } catch (_) { /* GroupExistsException is fine */ }
+    AdminCreateUserCommand({
         UserPoolId: USER_POOL_ID,
         Username: email,
         TemporaryPassword: temporaryPassword,
