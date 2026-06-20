@@ -558,8 +558,8 @@ export async function handler(event) {
           }));
           return created({ ...item, temporaryPassword });
         } catch (cognitoErr) {
-          console.error('Cognito student error:', cognitoErr.name, cognitoErr.message);
-          return created({ ...item, _cognitoError: cognitoErr.name + ': ' + cognitoErr.message });
+          console.error('Cognito create student error (non-fatal):', cognitoErr.message);
+          return created(item);
         }
       }
 
