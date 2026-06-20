@@ -18,6 +18,7 @@ module.exports = {
           900: '#0c4a6e',
         },
         secondary: {
+          50:  '#f5f3ff',
           400: '#a78bfa',
           500: '#8b5cf6',
           600: '#7c3aed',
