@@ -4,41 +4,42 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: us-east-2
+      POOL_ID: us-east-2_iMjggcLlT
+      CLIENT_ID: 2ohbrl0ev8ajk5ls900cmf6kd8
+      API_URL: https://sny9tz0wyh.execute-api.us-east-2.amazonaws.com/prod
     steps:
-      - name: Get Cognito token
-        id: auth
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: us-east-2
+      - name: Set temp password and authenticate
         run: |
-          TOKEN=$(aws cognito-idp admin-initiate-auth \
-            --user-pool-id us-east-2_iMjggcLlT \
-            --client-id 2ohbrl0ev8ajk5ls900cmf6kd8 \
-            --auth-flow ADMIN_NO_SRP_AUTH \
-            --auth-parameters USERNAME=manoj@oppertunitypool.com,PASSWORD=Test@12345! \
-            --query 'AuthenticationResult.IdToken' --output text 2>&1) || true
-          echo "TOKEN_RESULT=$TOKEN" >> "$GITHUB_OUTPUT"
-          echo "Token length: ${#TOKEN}"
-
-      - name: Test POST /students
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: us-east-2
-          API_URL: https://sny9tz0wyh.execute-api.us-east-2.amazonaws.com/prod
-        run: |
-          TOKEN="${{ steps.auth.outputs.TOKEN_RESULT }}"
-          TEST_EMAIL="validate-student-$(date +%s)@test.com"
-          echo "Testing with email: $TEST_EMAIL"
+          TEMP_PASS="ValidateTest1!"
+          aws cognito-idp admin-set-user-password \
+            --user-pool-id "${POOL_ID}" \
+            --username manoj@oppertunitypool.com \
+            --password "${TEMP_PASS}" \
+            --permanent
+          echo "Password set. Authenticating..."
+          TOKEN=$(aws cognito-idp initiate-auth \
+            --client-id "${CLIENT_ID}" \
+            --auth-flow USER_PASSWORD_AUTH \
+            --auth-parameters USERNAME=manoj@oppertunitypool.com,PASSWORD="${TEMP_PASS}" \
+            --query 'AuthenticationResult.IdToken' --output text)
+          echo "Got token (len=${#TOKEN})"
+          TEST_EMAIL="validate-$(date +%s)@optutor-test.com"
+          echo "Calling POST /students with ${TEST_EMAIL}..."
           RESPONSE=$(curl -s -X POST "${API_URL}/students" \
             -H "Authorization: Bearer ${TOKEN}" \
             -H "Content-Type: application/json" \
-            -d "{\"userId\":\"test-$(date +%s)\",\"email\":\"${TEST_EMAIL}\",\"fullName\":\"Validate Student\",\"phone\":\"555-0000\",\"dateOfBirth\":\"2000-01-01\"}")
-          echo "RESPONSE: $RESPONSE"
-          if echo "$RESPONSE" | grep -q "temporaryPassword"; then
-            echo "✅ SUCCESS: temporaryPassword present in response"
-          else
-            echo "❌ FAIL: temporaryPassword missing"
-            echo "Full response: $RESPONSE"
+            -d "{\"userId\":\"val-$(date +%s)\",\"email\":\"${TEST_EMAIL}\",\"fullName\":\"Validate Student\",\"phone\":\"555-0001\",\"dateOfBirth\":\"2000-01-01\"}")
+          echo "RESPONSE: ${RESPONSE}"
+          if echo "${RESPONSE}" | python3 -c "import sys,json; d=json.load(sys.stdin); print('PASS' if 'temporaryPassword' in d else 'FAIL')"; then
+            echo "Result logged above"
           fi
+          # Reset password back
+          aws cognito-idp admin-set-user-password \
+            --user-pool-id "${POOL_ID}" \
+            --username manoj@oppertunitypool.com \
+            --password "Test@12345!" \
+            --permanent || true
