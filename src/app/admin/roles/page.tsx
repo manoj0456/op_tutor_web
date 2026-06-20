@@ -567,13 +567,17 @@ export default function AdminRolesPage() {
   const handleAddStudent = async (fullName: string, email: string, phone: string, dateOfBirth: string) => {
     const token  = await getIdToken()
     const userId = crypto.randomUUID()
-    await apiFetch('/students', token, {
-      method: 'POST',
-      body: JSON.stringify({ userId, email, fullName, phone, dateOfBirth }),
-    })
+    const result = await apiFetch('/students', token, {
+    method: 'POST',
+    body: JSON.stringify({ userId, email, fullName, phone, dateOfBirth }),
+  })
+  fetchUsers()
+  if (result?.temporaryPassword) {
+    setCreatedStudentPassword({ name: fullName, email, password: result.temporaryPassword })
+  } else {
     flash('Student created successfully')
-    fetchUsers()
   }
+}
 
   const handleResetPassword = async (temporaryPassword: string) => {
     if (!resetTarget) return

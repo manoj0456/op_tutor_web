@@ -609,6 +609,7 @@ export default function AdminRolesPage() {
   const [deleteTarget, setDeleteTarget]       = useState<Employee | null>(null)
   const [resetTarget, setResetTarget]         = useState<{ userId: string; name: string } | null>(null)
   const [createdEmpPassword, setCreatedEmpPassword] = useState<{ name: string; email: string; password: string } | null>(null)
+  const [createdStudentPassword, setCreatedStudentPassword] = useState<{ name: string; email: string; password: string } | null>(null)
 
   // Guard: require manage_roles permission
   useEffect(() => {
@@ -790,7 +791,28 @@ export default function AdminRolesPage() {
         />
       )}
 
-      {showAddEmployee && <AddEmployeeModal onClose={() => setShowAddEmployee(false)} onSubmit={handleAddEmployee} />}
+      {/* Student created — show temporary password */}
+  {createdStudentPassword && (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-sm p-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-2">Student Created</h2>
+        <p className="text-sm text-gray-600 mb-4">
+          Share this temporary password with{' '}
+          <span className="font-medium">{createdStudentPassword.name}</span>{' '}
+          (<span className="text-gray-500">{createdStudentPassword.email}</span>).
+          They will be prompted to set a new password on first login.
+        </p>
+        <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded px-3 py-2 mb-4">
+          <span className="flex-1 font-mono text-sm select-all">{createdStudentPassword.password}</span>
+          <button onClick={() => { navigator.clipboard.writeText(createdStudentPassword.password) }}
+            className="text-xs px-2 py-1 bg-primary-600 text-white rounded hover:bg-primary-700">Copy</button>
+        </div>
+        <button onClick={() => setCreatedStudentPassword(null)}
+          className="w-full px-4 py-2 text-sm font-medium text-white bg-gray-700 rounded hover:bg-gray-800">Done</button>
+      </div>
+    </div>
+  )}
+  {showAddEmployee && <AddEmployeeModal onClose={() => setShowAddEmployee(false)} onSubmit={handleAddEmployee} />}
       {showAddStudent  && <AddStudentModal  onClose={() => setShowAddStudent(false)}  onSubmit={handleAddStudent}  />}
       {editTarget   && <EditEmployeeModal   employee={editTarget}   onClose={() => setEditTarget(null)}   onSubmit={handleEditEmployee} />}
       {deleteTarget && <DeleteEmployeeModal employee={deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={handleDeleteEmployee} />}
