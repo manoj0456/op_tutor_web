@@ -183,6 +183,13 @@ jobs:
             --item "{\"userEmail\":{\"S\":\"manoj@oppertunitypool.com\"},\"roleId\":{\"S\":\"SUPER_ADMIN\"},\"roleName\":{\"S\":\"Super Admin\"},\"name\":{\"S\":\"Manoj\"},\"assignedBy\":{\"S\":\"system\"},\"assignedAt\":{\"S\":\"$NOW\"}}" 
           echo "Super Admin role seeded for manoj@oppertunitypool.com"
 
+      - name: Ensure STUDENT Cognito group exists
+        run: |
+          aws cognito-idp create-group \
+            --user-pool-id "$COGNITO_USER_POOL_ID" \
+            --group-name STUDENT \
+            --region "$AWS_REGION" 2>/dev/null || echo "STUDENT group already exists"
+          echo "STUDENT Cognito group ready"
       - name: Save NEXT_PUBLIC_API_URL secret
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
