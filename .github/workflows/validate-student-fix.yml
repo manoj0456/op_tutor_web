@@ -12,34 +12,19 @@ jobs:
       CLIENT_ID: 2ohbrl0ev8ajk5ls900cmf6kd8
       API_URL: https://sny9tz0wyh.execute-api.us-east-2.amazonaws.com/prod
     steps:
-      - name: Set temp password and authenticate
+      - name: Ensure STUDENT group exists
+        run: |
+          aws cognito-idp create-group --user-pool-id "${POOL_ID}" --group-name STUDENT 2>/dev/null || echo "Group already exists"
+          echo "STUDENT group ready"
+
+      - name: Set temp password and test POST students
         run: |
           TEMP_PASS="ValidateTest1!"
-          aws cognito-idp admin-set-user-password \
-            --user-pool-id "${POOL_ID}" \
-            --username manoj@oppertunitypool.com \
-            --password "${TEMP_PASS}" \
-            --permanent
-          echo "Password set. Authenticating..."
-          TOKEN=$(aws cognito-idp initiate-auth \
-            --client-id "${CLIENT_ID}" \
-            --auth-flow USER_PASSWORD_AUTH \
-            --auth-parameters USERNAME=manoj@oppertunitypool.com,PASSWORD="${TEMP_PASS}" \
-            --query 'AuthenticationResult.IdToken' --output text)
+          aws cognito-idp admin-set-user-password --user-pool-id "${POOL_ID}" --username manoj@oppertunitypool.com --password "${TEMP_PASS}" --permanent
+          TOKEN=$(aws cognito-idp initiate-auth --client-id "${CLIENT_ID}" --auth-flow USER_PASSWORD_AUTH --auth-parameters USERNAME=manoj@oppertunitypool.com,PASSWORD="${TEMP_PASS}" --query 'AuthenticationResult.IdToken' --output text)
           echo "Got token (len=${#TOKEN})"
-          TEST_EMAIL="validate-$(date +%s)@optutor-test.com"
-          echo "Calling POST /students with ${TEST_EMAIL}..."
-          RESPONSE=$(curl -s -X POST "${API_URL}/students" \
-            -H "Authorization: Bearer ${TOKEN}" \
-            -H "Content-Type: application/json" \
-            -d "{\"userId\":\"val-$(date +%s)\",\"email\":\"${TEST_EMAIL}\",\"fullName\":\"Validate Student\",\"phone\":\"555-0001\",\"dateOfBirth\":\"2000-01-01\"}")
+          TEST_EMAIL="val-$(date +%s)@optutor-test.com"
+          echo "Calling POST /students with ${TEST_EMAIL}"
+          RESPONSE=$(curl -s -X POST "${API_URL}/students" -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" -d "{\"userId\":\"v$(date +%s)\",\"email\":\"${TEST_EMAIL}\",\"fullName\":\"Validate Student\",\"phone\":\"555-1234\",\"dateOfBirth\":\"2000-01-01\"}")
           echo "RESPONSE: ${RESPONSE}"
-          if echo "${RESPONSE}" | python3 -c "import sys,json; d=json.load(sys.stdin); print('PASS' if 'temporaryPassword' in d else 'FAIL')"; then
-            echo "Result logged above"
-          fi
-          # Reset password back
-          aws cognito-idp admin-set-user-password \
-            --user-pool-id "${POOL_ID}" \
-            --username manoj@oppertunitypool.com \
-            --password "Test@12345!" \
-            --permanent || true
+          echo "${RESPONSE}" | python3 -c "import sys,json; d=json.load(sys.stdin); print('PASS - temporaryPassword present' if 'temporaryPassword' in d else 'FAIL - missing temporaryPassword, error=' + str(d.get('_cognitoError','none')))"
