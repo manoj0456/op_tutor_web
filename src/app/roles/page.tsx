@@ -60,6 +60,7 @@ const PAGE_PERMISSIONS = [
 
 const ACTION_PERMISSIONS = [
   { id: 'manage_employees', label: 'Add / Edit / Delete Employees' },
+    { id: 'manage_students',  label: 'Add / Edit / Delete Students' },
   { id: 'manage_students',  label: 'Add Student' },
   { id: 'promote_admins',   label: 'Reset Password / Change User Roles' },
 ] as const
@@ -575,6 +576,89 @@ function ResetPasswordModal({ userName, onClose, onConfirm }: ResetPasswordModal
 }
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
+
+interface EditStudentModalProps {
+  student: CognitoUser
+  onClose: () => void
+  onSubmit: (userId: string, data: { name: string; email: string }) => Promise<void>
+}
+function EditStudentModal({ student, onClose, onSubmit }: EditStudentModalProps) {
+  const [name, setName]       = useState(student.name)
+  const [email, setEmail]     = useState(student.email)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError]     = useState<string | null>(null)
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!name.trim()) { setError('Name is required'); return }
+    setSubmitting(true); setError(null)
+    try { await onSubmit(student.userId, { name: name.trim(), email: email.trim() }); onClose() }
+    catch (err: any) { setError(err.message || 'Failed to update student') }
+    finally { setSubmitting(false) }
+  }
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
+        <h2 className="text-lg font-semibold mb-4">Edit Student</h2>
+        {error && <div className="mb-3 text-sm text-red-600 bg-red-50 p-2 rounded">{error}</div>}
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
+            <input value={name} onChange={e => setName(e.target.value)} required
+              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+            <input value={email} onChange={e => setEmail(e.target.value)} type="email"
+              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+          </div>
+          <div className="flex gap-3 pt-2">
+            <button type="button" onClick={onClose}
+              className="flex-1 px-4 py-2 border rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+            <button type="submit" disabled={submitting}
+              className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50">
+              {submitting ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+interface DeleteStudentModalProps {
+  student: CognitoUser
+  onClose: () => void
+  onConfirm: (userId: string) => Promise<void>
+}
+function DeleteStudentModal({ student, onClose, onConfirm }: DeleteStudentModalProps) {
+  const [confirming, setConfirming] = useState(false)
+  const [error, setError]           = useState<string | null>(null)
+  const handleConfirm = async () => {
+    setConfirming(true); setError(null)
+    try { await onConfirm(student.userId); onClose() }
+    catch (err: any) { setError(err.message || 'Failed to delete student'); setConfirming(false) }
+  }
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm">
+        <h2 className="text-lg font-semibold mb-2">Delete Student</h2>
+        <p className="text-sm text-gray-600 mb-4">
+          Delete <strong>{student.name}</strong>? This will remove them from the system and the STUDENT group. This cannot be undone.
+        </p>
+        {error && <div className="mb-3 text-sm text-red-600 bg-red-50 p-2 rounded">{error}</div>}
+        <div className="flex gap-3">
+          <button onClick={onClose}
+            className="flex-1 px-4 py-2 border rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+          <button onClick={handleConfirm} disabled={confirming}
+            className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50">
+            {confirming ? 'Deleting…' : 'Delete'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function AdminRolesPage() {
   const { getIdToken } = useAuth()
   const { hasPermission, isSuperAdmin, userRole, loaded } = usePermissions()
@@ -582,6 +666,7 @@ export default function AdminRolesPage() {
 
   const canManageEmployees = hasPermission('manage_employees')
   const canManageRoles     = hasPermission('manage_roles')
+  const canManageStudents  = hasPermission('manage_students')
 
   const [activeTab, setActiveTab] = useState<Tab>('students')
 
@@ -608,6 +693,8 @@ export default function AdminRolesPage() {
   const [editTarget, setEditTarget]           = useState<Employee | null>(null)
   const [deleteTarget, setDeleteTarget]       = useState<Employee | null>(null)
   const [resetTarget, setResetTarget]         = useState<{ userId: string; name: string } | null>(null)
+  const [editStudentTarget,   setEditStudentTarget]   = useState<CognitoUser | null>(null)
+  const [deleteStudentTarget, setDeleteStudentTarget] = useState<CognitoUser | null>(null)
   const [createdEmpPassword, setCreatedEmpPassword] = useState<{ name: string; email: string; password: string } | null>(null)
   const [createdStudentPassword, setCreatedStudentPassword] = useState<{ name: string; email: string; password: string } | null>(null)
 
@@ -753,6 +840,24 @@ export default function AdminRolesPage() {
     { id: 'employees', label: 'Employees' },
     { id: 'roles',     label: 'Roles'     },
   ]
+  const handleEditStudent = async (userId: string, data: { name: string; email: string }) => {
+    const token = await getIdToken()
+    await apiFetch(`/students/${encodeURIComponent(userId)}`, token, {
+      method: 'PUT',
+      body: JSON.stringify({ fullName: data.name, email: data.email }),
+    })
+    flash('Student updated successfully')
+    fetchUsers()
+  }
+
+  const handleDeleteStudent = async (userId: string) => {
+    const token = await getIdToken()
+    await apiFetch(`/students/${encodeURIComponent(userId)}`, token, { method: 'DELETE' })
+    flash('Student deleted successfully')
+    fetchUsers()
+  }
+
+
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -816,7 +921,9 @@ export default function AdminRolesPage() {
       {showAddStudent  && <AddStudentModal  onClose={() => setShowAddStudent(false)}  onSubmit={handleAddStudent}  />}
       {editTarget   && <EditEmployeeModal   employee={editTarget}   onClose={() => setEditTarget(null)}   onSubmit={handleEditEmployee} />}
       {deleteTarget && <DeleteEmployeeModal employee={deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={handleDeleteEmployee} />}
-      {resetTarget  && <ResetPasswordModal  userName={resetTarget.name} onClose={() => setResetTarget(null)} onConfirm={handleResetPassword} />}
+      {resetTarget  && <{editStudentTarget   && <EditStudentModal   student={editStudentTarget}   onClose={() => setEditStudentTarget(null)}   onSubmit={handleEditStudent} />}
+      {deleteStudentTarget && <DeleteStudentModal student={deleteStudentTarget} onClose={() => setDeleteStudentTarget(null)} onConfirm={handleDeleteStudent} />}
+      ResetPasswordModal  userName={resetTarget.name} onClose={() => setResetTarget(null)} onConfirm={handleResetPassword} />}
 
       <div className="container mx-auto px-4 py-8 max-w-6xl">
         <div className="mb-6">
@@ -886,11 +993,23 @@ export default function AdminRolesPage() {
                         <td className="p-3 text-gray-500 text-xs">{u.lastActive ? new Date(u.lastActive).toLocaleDateString() : '—'}</td>
                         {isSuperAdmin && (
                           <td className="p-3">
+                        <div className="flex items-center gap-2">
+                          {canManageStudents && (
+                            <button onClick={() => setEditStudentTarget(u)} title="Edit student"
+                              className="text-gray-500 hover:text-primary-600 transition" aria-label="Edit">&#9998;</button>
+                          )}
+                          {canManageStudents && (
+                            <button onClick={() => setDeleteStudentTarget(u)} title="Delete student"
+                              className="text-gray-400 hover:text-red-600 transition" aria-label="Delete">&#128465;</button>
+                          )}
+                          {isSuperAdmin && (
                             <button onClick={() => setResetTarget({ userId: u.userId, name: u.name })} title="Reset password"
                               className="text-amber-600 hover:text-amber-800 text-xs font-medium px-2 py-1 border border-amber-300 rounded hover:bg-amber-50 transition">
-                              🔑 Reset
+                              &#128273; Reset
                             </button>
-                          </td>
+                          )}
+                        </div>
+                      </td>
                         )}
                       </tr>
                     ))}

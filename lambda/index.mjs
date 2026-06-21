@@ -579,6 +579,65 @@ export async function handler(event) {
         if (!res.Item) return notFound('Student not found');
         return ok(res.Item);
       }
+
+      if (method === 'PUT' && id) {
+        if (!ctx.permissions.has('manage_students')) return forbidden();
+        await ensureTable(TABLES.students, 'userId');
+        const existing = await ddb.send(new GetCommand({ TableName: TABLES.students, Key: { userId: id } }));
+        if (!existing.Item) return notFound('Student not found');
+        const { fullName, email, phone, dateOfBirth } = body;
+        const now = new Date().toISOString();
+        const updated = {
+          ...existing.Item,
+          ...(fullName !== undefined ? { fullName } : {}),
+          ...(email   !== undefined ? { email   } : {}),
+          ...(phone   !== undefined ? { phone   } : {}),
+          ...(dateOfBirth !== undefined ? { dateOfBirth } : {}),
+          updatedAt: now,
+          updatedBy: ctx.email,
+        };
+        await ddb.send(new PutCommand({ TableName: TABLES.students, Item: updated }));
+        if (fullName !== undefined || email !== undefined) {
+          try {
+            const cognitoAttrs = [];
+            if (fullName !== undefined) cognitoAttrs.push({ Name: 'name',  Value: fullName });
+            if (email   !== undefined) {
+              cognitoAttrs.push({ Name: 'email',          Value: email });
+              cognitoAttrs.push({ Name: 'email_verified', Value: 'true' });
+            }
+            await cognito.send(new AdminUpdateUserAttributesCommand({
+              UserPoolId: USER_POOL_ID,
+              Username: existing.Item.email,
+              UserAttributes: cognitoAttrs,
+            }));
+          } catch (cognitoErr) {
+            console.error('Cognito update student error (non-fatal):', cognitoErr.message);
+          }
+        }
+        return ok(updated);
+      }
+
+      if (method === 'DELETE' && id) {
+        if (!ctx.permissions.has('manage_students')) return forbidden();
+        await ensureTable(TABLES.students, 'userId');
+        const existing = await ddb.send(new GetCommand({ TableName: TABLES.students, Key: { userId: id } }));
+        if (!existing.Item) return notFound('Student not found');
+        await ddb.send(new DeleteCommand({ TableName: TABLES.students, Key: { userId: id } }));
+        try {
+          await cognito.send(new AdminRemoveUserFromGroupCommand({
+            UserPoolId: USER_POOL_ID,
+            Username: existing.Item.email,
+            GroupName: 'STUDENT',
+          }));
+          await cognito.send(new AdminDeleteUserCommand({
+            UserPoolId: USER_POOL_ID,
+            Username: existing.Item.email,
+          }));
+        } catch (cognitoErr) {
+          console.error('Cognito delete student error (non-fatal):', cognitoErr.message);
+        }
+        return ok({ deleted: true, userId: id });
+      }
     }
 
 
