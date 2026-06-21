@@ -1,0 +1,34 @@
+name: Add manage_students permission to roles
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/add-manage-students-permission.yml']
+jobs:
+  patch-dynamodb:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Patch SUPER_ADMIN and ADMIN in DynamoDB
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-2
+        run: |
+          patch_role() {
+            local roleId="$1"
+            aws dynamodb update-item \
+              --table-name OpTutor-Roles \
+              --key "{\"roleId\":{\"S\":\"$roleId\"}}" \
+              --update-expression "SET #p = list_append(if_not_exists(#p, :e), :n)" \
+              --condition-expression "NOT contains(#p, :ms)" \
+              --expression-attribute-names '{"#p":"permissions"}' \
+              --expression-attribute-values '{":n":{"L":[{"S":"manage_employees"},{"S":"manage_students"}]},":e":{"L":[]},":ms":{"S":"manage_students"}}' \
+              --return-values UPDATED_NEW \
+              && echo "$roleId patched" \
+              || echo "$roleId already has manage_students or no item found"
+          }
+          patch_role SUPER_ADMIN
+          patch_role ADMIN
+          echo "=== Final state ==="
+          aws dynamodb get-item --table-name OpTutor-Roles --key '{"roleId":{"S":"SUPER_ADMIN"}}' --query "Item.permissions" --output json
+          aws dynamodb get-item --table-name OpTutor-Roles --key '{"roleId":{"S":"ADMIN"}}' --query "Item.permissions" --output json
