@@ -8,13 +8,13 @@ const roles = [
   {
     roleId: 'SUPER_ADMIN', name: 'Super Admin',
     description: 'Full platform access â can manage roles, users, and all content',
-    permissions: ['manage_roles', 'promote_admins', 'manage_courses', 'view_content', 'manage_users', 'view_reports'],
+    permissions: ['manage_roles', 'promote_admins', 'manage_courses', 'view_content', 'manage_users', 'view_reports', 'manage_employees', 'manage_students'],
     isSystem: true, createdBy: 'system', createdAt: '2024-01-01T00:00:00.000Z',
   },
   {
     roleId: 'ADMIN', name: 'Admin',
     description: 'Manage users, roles, and content (cannot promote super admins)',
-    permissions: ['manage_roles', 'manage_courses', 'view_content', 'manage_users', 'view_reports'],
+    permissions: ['manage_roles', 'manage_courses', 'view_content', 'manage_users', 'view_reports', 'manage_employees', 'manage_students'],
     isSystem: true, createdBy: 'system', createdAt: '2024-01-01T00:00:00.000Z',
   },
   {
