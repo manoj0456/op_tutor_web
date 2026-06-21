@@ -560,6 +560,7 @@ export default function AdminRolesPage() {
   const [resetTarget, setResetTarget]         = useState<{ userId: string; name: string } | null>(null)
   const [editStudentTarget,   setEditStudentTarget]   = useState<CognitoUser | null>(null)
   const [deleteStudentTarget, setDeleteStudentTarget] = useState<CognitoUser | null>(null)
+  const [createdStudentPassword, setCreatedStudentPassword] = useState<{ name: string; email: string; password: string } | null>(null)
 
   useEffect(() => {
     if (loaded && !canManageEmployees) router.replace('/dashboard')
