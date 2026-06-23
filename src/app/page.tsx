@@ -241,9 +241,9 @@ export default function HomePage() {
           <div>
             <div className="text-white font-semibold mb-3">Company</div>
             <ul className="space-y-2 text-sm">
-              <li><Link href="/" className="hover:text-white transition">About Us</Link></li>
-              <li><Link href="/" className="hover:text-white transition">Become a Teacher</Link></li>
-              <li><Link href="/" className="hover:text-white transition">Contact</Link></li>
+              <li><Link href="/about" className="hover:text-white transition">About Us</Link></li>
+              <li><Link href="/become-a-teacher" className="hover:text-white transition">Become a Teacher</Link></li>
+              <li><Link href="/contact" className="hover:text-white transition">Contact</Link></li>
             </ul>
           </div>
           <div>
