@@ -58,6 +58,9 @@ export function PermissionProvider({ children }: { children: React.ReactNode }) 
   getIdTokenRef.current = getIdToken
 
   const loadPermissions = useCallback(async () => {
+    // user===undefined means auth is still initialising — don't resolve permissions yet
+    // (prevents a false-negative redirect before Cognito session is confirmed)
+    if (user === undefined) return
     if (!user || !userEmail) {
       setUserRole(null)
       setLoaded(true)
