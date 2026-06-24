@@ -996,16 +996,16 @@ export default function AdminRolesPage() {
                         <div className="flex items-center gap-2">
                           {canManageStudents && (
                             <button onClick={() => setEditStudentTarget(u)} title="Edit student"
-                              className="text-gray-500 hover:text-primary-600 transition" aria-label="Edit">&#9998;</button>
+                              className="text-gray-500 hover:text-primary-600 transition" aria-label="Edit">✏️</button>
                           )}
                           {canManageStudents && (
                             <button onClick={() => setDeleteStudentTarget(u)} title="Delete student"
-                              className="text-gray-400 hover:text-red-600 transition" aria-label="Delete">&#128465;</button>
+                              className="text-gray-400 hover:text-red-600 transition" aria-label="Delete">🗑️</button>
                           )}
                           {isSuperAdmin && (
                             <button onClick={() => setResetTarget({ userId: u.userId, name: u.name })} title="Reset password"
                               className="text-amber-600 hover:text-amber-800 text-xs font-medium px-2 py-1 border border-amber-300 rounded hover:bg-amber-50 transition">
-                              &#128273; Reset
+                              🔑 Reset
                             </button>
                           )}
                         </div>

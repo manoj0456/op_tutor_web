@@ -788,7 +788,7 @@ export async function handler(event) {
         const cognitoClient = new CognitoIdentityProviderClient({});
         const userPoolId = process.env.COGNITO_USER_POOL_ID;
         const targetUserId = decodeURIComponent(putAdminUserRoleMatch[1]);
-        const { role } = JSON.parse(body);
+        const { role } = body;
         const groupsResult = await cognitoClient.send(new AdminListGroupsForUserCommand({
           UserPoolId: userPoolId,
           Username: targetUserId

@@ -1,4 +1,4 @@
-export const metadata = { title: 'Contact — OpTutor' }
+'use client'
 
 export default function ContactPage() {
   return (

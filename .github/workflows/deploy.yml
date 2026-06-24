@@ -53,6 +53,65 @@ jobs:
             --include "*.html" \
             --include "*.txt"
 
+      - name: Ensure CloudFront URL-rewrite function
+        if: env.CLOUDFRONT_DISTRIBUTION_ID != ''
+        env:
+          CLOUDFRONT_DISTRIBUTION_ID: ${{ secrets.TUTOR_CLOUDFRONT_DISTRIBUTION_ID }}
+        run: |
+          FUNC_NAME="optutor-url-rewrite"
+          cat > /tmp/cf-func.js << 'CFEOF'
+          function handler(event) {
+            var request = event.request;
+            var uri = request.uri;
+            if (uri.endsWith('/')) {
+              request.uri += 'index.html';
+            } else if (!uri.includes('.')) {
+              request.uri += '/index.html';
+            }
+            return request;
+          }
+          CFEOF
+
+          EXISTING=$(aws cloudfront list-functions --query "FunctionList.Items[?Name=='${FUNC_NAME}'].Name" --output text 2>/dev/null || true)
+          if [ -z "$EXISTING" ] || [ "$EXISTING" = "None" ]; then
+            aws cloudfront create-function \
+              --name "$FUNC_NAME" \
+              --function-config '{"Comment":"Append /index.html for directory requests","Runtime":"cloudfront-js-2.0"}' \
+              --function-code fileb:///tmp/cf-func.js
+          else
+            ETAG=$(aws cloudfront describe-function --name "$FUNC_NAME" --query 'ETag' --output text)
+            aws cloudfront update-function \
+              --name "$FUNC_NAME" \
+              --function-config '{"Comment":"Append /index.html for directory requests","Runtime":"cloudfront-js-2.0"}' \
+              --function-code fileb:///tmp/cf-func.js \
+              --if-match "$ETAG"
+          fi
+
+          ETAG=$(aws cloudfront describe-function --name "$FUNC_NAME" --query 'ETag' --output text)
+          aws cloudfront publish-function --name "$FUNC_NAME" --if-match "$ETAG"
+
+          FUNC_ARN=$(aws cloudfront describe-function --name "$FUNC_NAME" --stage LIVE --query 'FunctionSummary.FunctionMetadata.FunctionARN' --output text)
+
+          DIST_CONFIG=$(aws cloudfront get-distribution-config --id "$CLOUDFRONT_DISTRIBUTION_ID")
+          DIST_ETAG=$(echo "$DIST_CONFIG" | jq -r '.ETag')
+          HAS_FUNC=$(echo "$DIST_CONFIG" | jq '.DistributionConfig.DefaultCacheBehavior.FunctionAssociations.Items[]? | select(.EventType=="viewer-request")' 2>/dev/null || true)
+
+          if [ -z "$HAS_FUNC" ]; then
+            UPDATED=$(echo "$DIST_CONFIG" | jq --arg arn "$FUNC_ARN" '
+              .DistributionConfig.DefaultCacheBehavior.FunctionAssociations = {
+                "Quantity": 1,
+                "Items": [{"FunctionARN": $arn, "EventType": "viewer-request"}]
+              } | .DistributionConfig')
+            echo "$UPDATED" > /tmp/dist-config.json
+            aws cloudfront update-distribution \
+              --id "$CLOUDFRONT_DISTRIBUTION_ID" \
+              --distribution-config file:///tmp/dist-config.json \
+              --if-match "$DIST_ETAG"
+            echo "CloudFront Function attached to distribution"
+          else
+            echo "CloudFront Function already associated"
+          fi
+
       - name: Invalidate CloudFront cache
         if: env.CLOUDFRONT_DISTRIBUTION_ID != ''
         env:
