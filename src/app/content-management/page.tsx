@@ -79,7 +79,16 @@ function YouTubePreview({ url, small }: { url: string; small?: boolean }) {
 // COURSES TAB
 // ════════════════════════════════════════════════════════════════
 
-interface VideoRow { title: string; description: string; youtubeUrl: string }
+const THUMB_SIZES = ['maxresdefault', 'hqdefault', 'mqdefault', 'default'] as const
+
+function extractVideoId(urlOrId: string): string {
+  if (!urlOrId) return ''
+  const parsed = parseYouTubeUrl(urlOrId)
+  if (parsed) return parsed.providerVideoId
+  return urlOrId.trim()
+}
+
+interface VideoRow { title: string; description: string; videoId: string; thumbVideoId: string; thumbSize: string }
 
 function VideoRowInput({ row, index, total, onChange, onRemove, onMoveUp, onMoveDown }: {
   row: VideoRow; index: number; total: number
@@ -88,6 +97,10 @@ function VideoRowInput({ row, index, total, onChange, onRemove, onMoveUp, onMove
   onMoveUp: (i: number) => void
   onMoveDown: (i: number) => void
 }) {
+  const embedUrl = row.videoId ? `https://www.youtube.com/embed/${row.videoId}` : ''
+  const thumbId = row.thumbVideoId || row.videoId
+  const thumbUrl = thumbId ? `https://img.youtube.com/vi/${thumbId}/${row.thumbSize || 'hqdefault'}.jpg` : ''
+
   return (
     <div className="border rounded-xl p-4 bg-gray-50 space-y-2">
       <div className="flex items-center justify-between mb-1">
@@ -99,17 +112,40 @@ function VideoRowInput({ row, index, total, onChange, onRemove, onMoveUp, onMove
         </div>
       </div>
       <input className={input} placeholder="Video title *" value={row.title} onChange={e => onChange(index, 'title', e.target.value)} />
-      <input
-        className={`${input} ${row.youtubeUrl && !isYouTubeUrl(row.youtubeUrl) ? 'border-red-400' : ''}`}
-        placeholder="YouTube URL *"
-        value={row.youtubeUrl}
-        onChange={e => onChange(index, 'youtubeUrl', e.target.value)}
-      />
-      {row.youtubeUrl && !isYouTubeUrl(row.youtubeUrl) && (
-        <p className="text-xs text-red-500">Please enter a valid YouTube URL</p>
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">YouTube Video ID *</label>
+        <input
+          className={`${input} ${row.videoId && !/^[\w-]{5,15}$/.test(row.videoId) ? 'border-red-400' : ''}`}
+          placeholder="e.g. dQw4w9WgXcQ"
+          value={row.videoId}
+          onChange={e => {
+            const id = extractVideoId(e.target.value)
+            onChange(index, 'videoId', id)
+            if (!row.thumbVideoId) onChange(index, 'thumbVideoId', id)
+          }}
+        />
+        {embedUrl && <p className="text-xs text-gray-400 mt-1 truncate">{embedUrl}</p>}
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Thumbnail Video ID</label>
+          <input className={input} placeholder={row.videoId || 'Video ID'} value={row.thumbVideoId} onChange={e => onChange(index, 'thumbVideoId', extractVideoId(e.target.value))} />
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Thumbnail Size</label>
+          <select className={input} value={row.thumbSize || 'hqdefault'} onChange={e => onChange(index, 'thumbSize', e.target.value)}>
+            {THUMB_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+      </div>
+      {thumbUrl && (
+        <div className="mt-1">
+          <p className="text-xs text-gray-400 truncate mb-1">{thumbUrl}</p>
+          <img src={thumbUrl} alt="Thumbnail preview" className="h-20 rounded-lg object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+        </div>
       )}
       <input className={input} placeholder="Video description (optional)" value={row.description} onChange={e => onChange(index, 'description', e.target.value)} />
-      {isYouTubeUrl(row.youtubeUrl) && <YouTubePreview url={row.youtubeUrl} />}
+      {row.videoId && <YouTubePreview url={embedUrl} />}
     </div>
   )
 }
@@ -150,8 +186,11 @@ function CourseForm({ initial, onSave, onCancel, getToken }: {
 }) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fromInitial = (c: any): VideoRow[] => c?.videos?.length
-    ? c.videos.map((v: any) => ({ title: v.title || '', description: v.description || '', youtubeUrl: v.youtubeUrl || '' }))
-    : [{ title: '', description: '', youtubeUrl: '' }]
+    ? c.videos.map((v: any) => {
+        const id = v.providerVideoId || extractVideoId(v.youtubeUrl || '')
+        return { title: v.title || '', description: v.description || '', videoId: id, thumbVideoId: id, thumbSize: 'hqdefault' }
+      })
+    : [{ title: '', description: '', videoId: '', thumbVideoId: '', thumbSize: 'hqdefault' }]
 
   const [title, setTitle] = useState(initial?.title ?? '')
   const [thumbnailUrl, setThumbnailUrl] = useState(initial?.thumbnailUrl ?? '')
@@ -178,19 +217,20 @@ function CourseForm({ initial, onSave, onCancel, getToken }: {
   const handleSave = async (publish = false) => {
     if (!title.trim()) { setError('Title is required'); return }
     if (!instructorName.trim()) { setError('Instructor name is required'); return }
-    const validVideos = videos.filter(v => v.youtubeUrl.trim() && isYouTubeUrl(v.youtubeUrl))
-    if (!validVideos.length) { setError('At least one valid YouTube video is required'); return }
-    if (videos.some(v => v.youtubeUrl && !isYouTubeUrl(v.youtubeUrl))) { setError('Fix invalid YouTube URLs before saving'); return }
+    const validVideos = videos.filter(v => v.videoId.trim())
+    if (!validVideos.length) { setError('At least one YouTube Video ID is required'); return }
     setSaving(true); setError('')
     try {
       const token = await getToken()
       const method = initial ? 'PUT' : 'POST'
       const path = initial ? `/courses/${initial.courseId}` : '/courses'
+      const thumbId = validVideos[0].thumbVideoId || validVideos[0].videoId
+      const thumbSize = validVideos[0].thumbSize || 'hqdefault'
       const saved = await apiFetch(path, token, {
         method,
         body: JSON.stringify({
           title: title.trim(),
-          thumbnailUrl: thumbnailUrl.trim() || undefined,
+          thumbnailUrl: thumbnailUrl.trim() || `https://img.youtube.com/vi/${thumbId}/${thumbSize}.jpg`,
           shortDescription: shortDescription.trim(),
           description: description.trim(),
           category, tags, difficultyLevel,
@@ -198,8 +238,9 @@ function CourseForm({ initial, onSave, onCancel, getToken }: {
           status: publish ? 'PUBLISHED' : status,
           isPaid,
           videos: validVideos.map((v, i) => {
-            const parsed = parseYouTubeUrl(v.youtubeUrl)!
-            return { title: v.title.trim() || `Video ${i + 1}`, description: v.description.trim(), youtubeUrl: v.youtubeUrl, providerType: 'YOUTUBE', providerVideoId: parsed.providerVideoId, embedUrl: parsed.embedUrl, order: i }
+            const embedUrl = `https://www.youtube.com/embed/${v.videoId}`
+            const youtubeUrl = `https://www.youtube.com/watch?v=${v.videoId}`
+            return { title: v.title.trim() || `Video ${i + 1}`, description: v.description.trim(), youtubeUrl, providerType: 'YOUTUBE', providerVideoId: v.videoId, embedUrl, order: i }
           }),
         }),
       })
@@ -218,8 +259,8 @@ function CourseForm({ initial, onSave, onCancel, getToken }: {
           <input className={input} placeholder="e.g. Introduction to Python" value={title} onChange={e => setTitle(e.target.value)} />
         </Field>
 
-        <Field label="Thumbnail URL">
-          <input className={input} placeholder="https://..." value={thumbnailUrl} onChange={e => setThumbnailUrl(e.target.value)} />
+        <Field label="Thumbnail URL (auto-generated from first video, or override)">
+          <input className={input} placeholder="Leave blank to auto-generate from video ID" value={thumbnailUrl} onChange={e => setThumbnailUrl(e.target.value)} />
           {thumbnailUrl && <img src={thumbnailUrl} alt="" className="mt-2 h-20 rounded-lg object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />}
         </Field>
 
@@ -272,7 +313,7 @@ function CourseForm({ initial, onSave, onCancel, getToken }: {
         <div>
           <div className="flex items-center justify-between mb-2">
             <label className="text-sm font-medium text-gray-700">Videos <span className="text-red-500">*</span></label>
-            <button onClick={() => setVideos(p => [...p, { title: '', description: '', youtubeUrl: '' }])} className="text-xs text-primary-600 hover:text-primary-700 font-medium">+ Add video</button>
+            <button onClick={() => setVideos(p => [...p, { title: '', description: '', videoId: '', thumbVideoId: '', thumbSize: 'hqdefault' }])} className="text-xs text-primary-600 hover:text-primary-700 font-medium">+ Add video</button>
           </div>
           <div className="space-y-3">
             {videos.map((v, i) => (
@@ -444,38 +485,42 @@ function SessionForm({ initial, onSave, onCancel, getToken }: {
   const [timezone, setTimezone] = useState(initial?.timezone ?? 'UTC')
   const [status, setStatus] = useState<LiveSession['status']>(initial?.status ?? 'UPCOMING')
   const [isPaid, setIsPaid] = useState<boolean>(initial?.isPaid ?? false)
-  const [youtubeUrl, setYoutubeUrl] = useState(initial?.youtubeUrl ?? '')
+  const initVideoId = initial?.providerVideoId || extractVideoId(initial?.youtubeUrl ?? '')
+  const [videoId, setVideoId] = useState(initVideoId)
+  const [thumbVideoId, setThumbVideoId] = useState(initVideoId)
+  const [thumbSize, setThumbSize] = useState<string>('hqdefault')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
-  const urlValid = youtubeUrl ? isYouTubeUrl(youtubeUrl) : true
+  const embedUrl = videoId ? `https://www.youtube.com/embed/${videoId}` : ''
+  const thumbId = thumbVideoId || videoId
+  const thumbUrl = thumbId ? `https://img.youtube.com/vi/${thumbId}/${thumbSize}.jpg` : ''
 
   const handleSave = async () => {
     if (!title.trim()) { setError('Title is required'); return }
     if (!instructorName.trim()) { setError('Instructor name is required'); return }
-    if (!youtubeUrl.trim()) { setError('YouTube URL is required'); return }
-    if (!isYouTubeUrl(youtubeUrl)) { setError('Please enter a valid YouTube URL'); return }
+    if (!videoId.trim()) { setError('YouTube Video ID is required'); return }
     setSaving(true); setError('')
     try {
       const token = await getToken()
       const scheduledAt = new Date(`${date}T${time}:00`).toISOString()
-      const parsed = parseYouTubeUrl(youtubeUrl)!
+      const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`
       const method = initial ? 'PUT' : 'POST'
       const path = initial ? `/live-sessions/${initial.sessionId}` : '/live-sessions'
       const saved = await apiFetch(path, token, {
         method,
         body: JSON.stringify({
           title: title.trim(),
-          thumbnailUrl: thumbnailUrl.trim() || undefined,
+          thumbnailUrl: thumbnailUrl.trim() || thumbUrl || undefined,
           shortDescription: shortDescription.trim(),
           description: description.trim(),
           instructorName: instructorName.trim(),
           scheduledAt, duration: Number(duration), timezone, status,
           isPaid,
-          youtubeUrl: youtubeUrl.trim(),
+          youtubeUrl,
           providerType: 'YOUTUBE',
-          providerVideoId: parsed.providerVideoId,
-          embedUrl: parsed.embedUrl,
+          providerVideoId: videoId,
+          embedUrl,
         }),
       })
       onSave(saved)
@@ -493,8 +538,44 @@ function SessionForm({ initial, onSave, onCancel, getToken }: {
           <input className={input} placeholder="e.g. Live Q&A: Introduction to Python" value={title} onChange={e => setTitle(e.target.value)} />
         </Field>
 
-        <Field label="Thumbnail URL">
-          <input className={input} placeholder="https://..." value={thumbnailUrl} onChange={e => setThumbnailUrl(e.target.value)} />
+        <Field label="YouTube Video ID" required>
+          <input
+            className={input}
+            placeholder="e.g. dQw4w9WgXcQ"
+            value={videoId}
+            onChange={e => {
+              const id = extractVideoId(e.target.value)
+              setVideoId(id)
+              if (!thumbVideoId) setThumbVideoId(id)
+            }}
+          />
+          {embedUrl && <p className="text-xs text-gray-400 mt-1 truncate">{embedUrl}</p>}
+          {videoId && <YouTubePreview url={embedUrl} />}
+        </Field>
+
+        <Field label="Thumbnail">
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Video ID</label>
+              <input className={input} placeholder={videoId || 'Video ID'} value={thumbVideoId} onChange={e => setThumbVideoId(extractVideoId(e.target.value))} />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Size</label>
+              <select className={input} value={thumbSize} onChange={e => setThumbSize(e.target.value)}>
+                {THUMB_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+          </div>
+          {thumbUrl && (
+            <div className="mt-2">
+              <p className="text-xs text-gray-400 truncate mb-1">{thumbUrl}</p>
+              <img src={thumbUrl} alt="Thumbnail preview" className="h-20 rounded-lg object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+            </div>
+          )}
+        </Field>
+
+        <Field label="Thumbnail URL Override">
+          <input className={input} placeholder="Leave blank to auto-generate" value={thumbnailUrl} onChange={e => setThumbnailUrl(e.target.value)} />
         </Field>
 
         <Field label="Short Description">
@@ -543,17 +624,6 @@ function SessionForm({ initial, onSave, onCancel, getToken }: {
             <button type="button" onClick={() => setIsPaid(false)} className={`px-4 py-1.5 rounded-full text-xs font-semibold transition ${!isPaid ? 'bg-green-100 text-green-700 ring-2 ring-green-300' : 'bg-gray-100 text-gray-500'}`}>Free</button>
             <button type="button" onClick={() => setIsPaid(true)} className={`px-4 py-1.5 rounded-full text-xs font-semibold transition ${isPaid ? 'bg-orange-100 text-orange-700 ring-2 ring-orange-300' : 'bg-gray-100 text-gray-500'}`}>Paid</button>
           </div>
-        </Field>
-
-        <Field label="YouTube Live URL" required>
-          <input
-            className={`${input} ${youtubeUrl && !urlValid ? 'border-red-400' : ''}`}
-            placeholder="https://www.youtube.com/watch?v=..."
-            value={youtubeUrl}
-            onChange={e => setYoutubeUrl(e.target.value)}
-          />
-          {youtubeUrl && !urlValid && <p className="text-xs text-red-500 mt-1">Please enter a valid YouTube URL</p>}
-          {urlValid && youtubeUrl && <YouTubePreview url={youtubeUrl} />}
         </Field>
       </div>
 
