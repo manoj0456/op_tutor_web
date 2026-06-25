@@ -1,4 +1,6 @@
+'use client'
 import Link from 'next/link'
+import { useAuth } from '@/context/AuthContext'
 
 const stats = [
   { value: '10,000+', label: 'Active Students' },
@@ -63,11 +65,47 @@ const testimonials = [
   { name: 'Dr. Priya S.', role: 'Biology Teacher', avatar: 'PS', text: 'The visual teaching tools help me show students exactly what I am explaining in real time. Engagement is through the roof.' },
 ]
 
+function LoggedInHome() {
+  return (
+    <main className="min-h-screen bg-gray-50">
+      <div className="max-w-5xl mx-auto py-16 px-4">
+        <h1 className="text-3xl font-bold text-gray-900 mb-10">Welcome back</h1>
+        <div className="grid md:grid-cols-2 gap-8">
+          <Link
+            href="/live"
+            className="group bg-white rounded-2xl p-8 shadow-sm border border-gray-100 hover:shadow-md transition flex flex-col items-center text-center"
+          >
+            <div className="w-16 h-16 rounded-full bg-primary-100 text-primary-600 flex items-center justify-center text-3xl mb-5 group-hover:bg-primary-200 transition">
+              🎥
+            </div>
+            <h2 className="text-xl font-bold text-gray-900 mb-2">Live Sessions</h2>
+            <p className="text-gray-500 text-sm">Join real-time interactive classes with expert teachers</p>
+          </Link>
+          <Link
+            href="/courses"
+            className="group bg-white rounded-2xl p-8 shadow-sm border border-gray-100 hover:shadow-md transition flex flex-col items-center text-center"
+          >
+            <div className="w-16 h-16 rounded-full bg-secondary-100 text-secondary-600 flex items-center justify-center text-3xl mb-5 group-hover:bg-secondary-200 transition">
+              📚
+            </div>
+            <h2 className="text-xl font-bold text-gray-900 mb-2">Courses</h2>
+            <p className="text-gray-500 text-sm">Browse and learn from structured video courses at your own pace</p>
+          </Link>
+        </div>
+      </div>
+    </main>
+  )
+}
+
 export default function HomePage() {
+  const { user } = useAuth()
+
+  if (user) return <LoggedInHome />
+
   return (
     <main className="min-h-screen bg-white">
 
-      {/* ── HERO ── */}
+      {/* -- HERO -- */}
       <section className="bg-gradient-to-br from-primary-900 via-primary-700 to-secondary-600 text-white py-24 px-4">
         <div className="max-w-5xl mx-auto text-center">
           <span className="inline-block bg-white/20 text-white text-sm font-medium px-4 py-1 rounded-full mb-6">
@@ -99,7 +137,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── STATS ── */}
+      {/* -- STATS -- */}
       <section className="bg-primary-800 text-white py-10 px-4">
         <div className="max-w-5xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
           {stats.map((s) => (
@@ -111,7 +149,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── FEATURES ── */}
+      {/* -- FEATURES -- */}
       <section className="py-20 px-4 bg-gray-50">
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-14">
@@ -132,7 +170,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── CATEGORIES ── */}
+      {/* -- CATEGORIES -- */}
       <section className="py-20 px-4 bg-white">
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-14">
@@ -154,7 +192,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── HOW IT WORKS ── */}
+      {/* -- HOW IT WORKS -- */}
       <section className="py-20 px-4 bg-gradient-to-br from-primary-50 to-secondary-50">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-14">
@@ -174,7 +212,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── TESTIMONIALS ── */}
+      {/* -- TESTIMONIALS -- */}
       <section className="py-20 px-4 bg-white">
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-14">
@@ -183,7 +221,7 @@ export default function HomePage() {
           <div className="grid md:grid-cols-3 gap-8">
             {testimonials.map((t) => (
               <div key={t.name} className="bg-gray-50 rounded-2xl p-7 border border-gray-100">
-                <p className="text-gray-600 text-sm leading-relaxed mb-6">"{t.text}"</p>
+                <p className="text-gray-600 text-sm leading-relaxed mb-6">&quot;{t.text}&quot;</p>
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-primary-600 text-white flex items-center justify-center text-sm font-bold">
                     {t.avatar}
@@ -199,7 +237,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── CTA ── */}
+      {/* -- CTA -- */}
       <section className="py-20 px-4 bg-gradient-to-br from-primary-900 via-primary-700 to-secondary-600 text-white text-center">
         <div className="max-w-3xl mx-auto">
           <h2 className="text-4xl font-extrabold mb-4">Ready to Future-Proof Your Skills?</h2>
@@ -223,7 +261,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── FOOTER ── */}
+      {/* -- FOOTER -- */}
       <footer className="bg-gray-900 text-gray-400 py-12 px-4">
         <div className="max-w-6xl mx-auto grid md:grid-cols-4 gap-10">
           <div>
@@ -255,7 +293,7 @@ export default function HomePage() {
           </div>
         </div>
         <div className="max-w-6xl mx-auto mt-10 pt-8 border-t border-gray-800 text-center text-xs text-gray-500">
-          © 2026 OpTutor · tutor.opportunitypool.com · All rights reserved.
+          &copy; 2026 OpTutor &middot; tutor.opportunitypool.com &middot; All rights reserved.
         </div>
       </footer>
 
