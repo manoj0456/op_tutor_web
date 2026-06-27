@@ -152,7 +152,7 @@ function SessionCard({ session, onClick, locked }: { session: LiveSession; onCli
     >
       <div className="flex gap-4 p-4">
         {/* Thumbnail */}
-        <div className="relative w-24 h-16 rounded-lg overflow-hidden shrink-0 bg-gray-200">
+        <div className="relative w-20 h-14 sm:w-24 sm:h-16 rounded-lg overflow-hidden shrink-0 bg-gray-200">
           {thumb ? (
             <img src={thumb} alt={session.title} className="w-full h-full object-cover" />
           ) : (

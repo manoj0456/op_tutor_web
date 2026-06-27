@@ -225,7 +225,7 @@ export function StudentSignupForm() {
           <div className="flex items-center gap-3">
             <div className="w-14 h-14 rounded-full bg-gray-100 overflow-hidden flex items-center justify-center shrink-0">
               {profilePicDataUrl
-                ? <img src={profilePicDataUrl} alt="" className="w-full h-full object-cover" />
+                ? <img src={profilePicDataUrl} alt="" className="w-full h-full max-w-full object-cover" />
                 : <span className="text-gray-300 text-xl">👤</span>}
             </div>
             <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} className="text-sm" />
