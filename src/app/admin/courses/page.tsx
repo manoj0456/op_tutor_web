@@ -193,7 +193,7 @@ function CoursesTab({ getToken }: { getToken: () => Promise<string> }) {
             const thumb = course.videos[0] ? getThumbnail(course.videos[0].youtubeUrl) : ''
             return (
               <div key={course.courseId} className="bg-white rounded-xl border border-gray-100 p-4 flex items-center gap-4 hover:shadow-sm transition">
-                {thumb && <img src={thumb} alt="" className="w-16 h-10 rounded-lg object-cover shrink-0" />}
+                {thumb && <img src={thumb} alt="" className="w-16 h-10 max-w-full rounded-lg object-cover shrink-0" />}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <h4 className="font-semibold text-gray-900 text-sm truncate">{course.title}</h4>

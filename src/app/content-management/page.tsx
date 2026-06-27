@@ -141,7 +141,7 @@ function VideoRowInput({ row, index, total, onChange, onRemove, onMoveUp, onMove
       {thumbUrl && (
         <div className="mt-1">
           <p className="text-xs text-gray-400 truncate mb-1">{thumbUrl}</p>
-          <img src={thumbUrl} alt="Thumbnail preview" className="h-20 rounded-lg object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+          <img src={thumbUrl} alt="Thumbnail preview" className="h-20 max-w-full rounded-lg object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
         </div>
       )}
       <input className={input} placeholder="Video description (optional)" value={row.description} onChange={e => onChange(index, 'description', e.target.value)} />
@@ -261,7 +261,7 @@ function CourseForm({ initial, onSave, onCancel, getToken }: {
 
         <Field label="Thumbnail URL (auto-generated from first video, or override)">
           <input className={input} placeholder="Leave blank to auto-generate from video ID" value={thumbnailUrl} onChange={e => setThumbnailUrl(e.target.value)} />
-          {thumbnailUrl && <img src={thumbnailUrl} alt="" className="mt-2 h-20 rounded-lg object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />}
+          {thumbnailUrl && <img src={thumbnailUrl} alt="" className="mt-2 h-20 max-w-full rounded-lg object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />}
         </Field>
 
         <Field label="Short Description">
@@ -569,7 +569,7 @@ function SessionForm({ initial, onSave, onCancel, getToken }: {
           {thumbUrl && (
             <div className="mt-2">
               <p className="text-xs text-gray-400 truncate mb-1">{thumbUrl}</p>
-              <img src={thumbUrl} alt="Thumbnail preview" className="h-20 rounded-lg object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+              <img src={thumbUrl} alt="Thumbnail preview" className="h-20 max-w-full rounded-lg object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
             </div>
           )}
         </Field>
